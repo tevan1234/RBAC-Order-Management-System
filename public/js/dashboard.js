@@ -2,16 +2,19 @@
 const menuConfig = {
     admin: [
         { id: 'dashboard', label: '儀表板', icon: '📊' },
+        { id: 'customers', label: '客戶管理', icon: '👤' },
         { id: 'orders', label: '訂單管理', icon: '🛍️' },
         { id: 'users', label: '使用者管理', icon: '👥' },
         { id: 'permissions', label: '權限設定', icon: '⚙️' }
     ],
     sales: [
         { id: 'dashboard', label: '儀表板', icon: '📊' },
+        { id: 'customers', label: '客戶管理', icon: '👤' },
         { id: 'orders', label: '訂單管理', icon: '🛍️' }
     ],
     viewer: [
-        { id: 'dashboard', label: '儀表板 (唯讀)', icon: '👁️' }
+        { id: 'dashboard', label: '儀表板 (唯讀)', icon: '👁️' },
+        { id: 'customers', label: '客戶管理', icon: '👤' }
     ]
 };
 
@@ -59,28 +62,54 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 function initData() {
+    // Orders 資料
     const storedOrders = localStorage.getItem('orders');
-    let shouldReset = !storedOrders;
+    let shouldResetOrders = !storedOrders;
 
     if (storedOrders) {
         try {
             const parsedOrders = JSON.parse(storedOrders);
             // 檢查舊版結構，如果沒有 productId 就強制重置
             if (parsedOrders.length > 0 && !parsedOrders[0].productId) {
-                shouldReset = true;
+                shouldResetOrders = true;
             }
         } catch (e) {
-            shouldReset = true;
+            shouldResetOrders = true;
         }
     }
 
-    if (shouldReset) {
+    if (shouldResetOrders) {
         const defaultOrders = [
             { id: 'ORD-1', customer: "王小明", productId: "P001", amount: 1200, status: "已完成", ownerId: "EMP001", createdAt: "2026-05-01T10:00:00Z", updatedAt: "2026-05-01T10:00:00Z" },
             { id: 'ORD-2', customer: "李小華", productId: "P002", amount: 2400, status: "處理中", ownerId: "EMP002", createdAt: "2026-05-01T10:00:00Z", updatedAt: "2026-05-01T10:00:00Z" },
             { id: 'ORD-3', customer: "陳大文", productId: "P003", amount: 3600, status: "處理中", ownerId: "EMP002", createdAt: "2026-05-01T10:00:00Z", updatedAt: "2026-05-01T10:00:00Z" }
         ];
         localStorage.setItem('orders', JSON.stringify(defaultOrders));
+    }
+
+    // Customers 資料
+    if (!localStorage.getItem('customers')) {
+        const defaultCustomers = [
+            {
+                customerId: "C001",
+                name: "王小明",
+                email: "customer1@test.com",
+                ownerId: "EMP002",
+                status: "active",
+                createdAt: "2026-05-01T10:00:00Z",
+                updatedAt: "2026-05-01T10:00:00Z"
+            },
+            {
+                customerId: "C002",
+                name: "李小華",
+                email: "customer2@test.com",
+                ownerId: "EMP001",
+                status: "active",
+                createdAt: "2026-05-01T09:00:00Z",
+                updatedAt: "2026-05-01T09:30:00Z"
+            }
+        ];
+        localStorage.setItem('customers', JSON.stringify(defaultCustomers));
     }
 }
 
@@ -100,10 +129,14 @@ function initUI(user) {
 
     // 控制 Orders 區塊的「新增訂單」按鈕
     const addOrderBtn = document.getElementById('addOrderBtn');
-    if (user.role === 'admin' || user.role === 'sales') {
-        addOrderBtn.style.display = 'block';
-    } else {
-        addOrderBtn.style.display = 'none';
+    if (addOrderBtn) {
+        addOrderBtn.style.display = (user.role === 'admin' || user.role === 'sales') ? 'block' : 'none';
+    }
+
+    // 控制 Customers 區塊的「新增客戶」按鈕
+    const addCustomerBtn = document.getElementById('addCustomerBtn');
+    if (addCustomerBtn) {
+        addCustomerBtn.style.display = (user.role === 'admin' || user.role === 'sales') ? 'block' : 'none';
     }
 }
 
@@ -172,8 +205,207 @@ function navigateTo(sectionId, user) {
 function loadSectionData(sectionId, user) {
     if (sectionId === 'orders') {
         renderOrdersTable();
+    } else if (sectionId === 'customers') {
+        renderCustomersTable();
     } else if (sectionId === 'users' && user.role === 'admin') {
         renderUsersTable();
+    }
+}
+
+function formatDate(isoString) {
+    if (!isoString) return '-';
+    const date = new Date(isoString);
+    return date.toLocaleString('zh-TW', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+    });
+}
+
+/* =========================================
+   Customers Management Logic
+========================================= */
+
+function getCustomers() {
+    return JSON.parse(localStorage.getItem('customers') || '[]');
+}
+
+function saveCustomers(customers) {
+    localStorage.setItem('customers', JSON.stringify(customers));
+}
+
+function renderCustomersTable() {
+    const user = JSON.parse(localStorage.getItem('currentUser'));
+    const tbody = document.getElementById('customersTableBody');
+    if (!tbody) return;
+    
+    let customers = getCustomers();
+    const usersList = JSON.parse(localStorage.getItem('users') || '[]');
+
+    // Data-level 過濾：sales 只能看見自己的客戶
+    if (user.role === 'sales') {
+        customers = customers.filter(c => c.ownerId === user.employeeId);
+    }
+
+    tbody.innerHTML = customers.map(customer => {
+        // 狀態 Badge 顏色
+        const badgeClass = customer.status === 'active' ? 'badge-success' : 'badge-secondary';
+        
+        // 負責人查表
+        const ownerUser = usersList.find(u => u.employeeId === customer.ownerId);
+        const ownerName = ownerUser ? ownerUser.name : customer.ownerId;
+
+        // 動作按鈕邏輯
+        let actionsHtml = '';
+        if (user.role !== 'viewer' && customer.status !== 'inactive') {
+            // Edit: admin 可編輯所有，sales 可編輯自己的
+            if (user.role === 'admin' || (user.role === 'sales' && customer.ownerId === user.employeeId)) {
+                actionsHtml += `<button class="btn-secondary" onclick="openCustomerModal('${customer.customerId}')">編輯</button>`;
+            }
+            // Void: 只有 admin 可作廢
+            if (user.role === 'admin') {
+                actionsHtml += `<button class="btn-danger" onclick="voidCustomer('${customer.customerId}')">作廢</button>`;
+            }
+        }
+
+        return `
+            <tr>
+                <td><strong>${customer.customerId}</strong></td>
+                <td>${customer.name}</td>
+                <td>${customer.email}</td>
+                <td><span class="badge badge-viewer">${ownerName}</span></td>
+                <td><span class="badge ${badgeClass}">${customer.status}</span></td>
+                <td><small style="color:#6B7280">${formatDate(customer.createdAt)}</small></td>
+                <td><small style="color:#6B7280">${formatDate(customer.updatedAt)}</small></td>
+                <td class="actions-cell">${actionsHtml}</td>
+            </tr>
+        `;
+    }).join('');
+}
+
+// 開啟 Customer Modal (新增/編輯)
+window.openCustomerModal = function(customerId = null) {
+    const user = JSON.parse(localStorage.getItem('currentUser'));
+    const modal = document.getElementById('customerModal');
+    const title = document.getElementById('customerModalTitle');
+    const idInput = document.getElementById('customerId');
+    const nameInput = document.getElementById('customerName');
+    const emailInput = document.getElementById('customerEmail');
+
+    // 權限檢查
+    if (user.role === 'viewer') {
+        alert("無權限操作");
+        return;
+    }
+
+    if (customerId) {
+        // 編輯模式
+        const customers = getCustomers();
+        const customer = customers.find(c => c.customerId === customerId);
+        if (!customer) return;
+
+        // Data-level 權限防護：sales 只能編輯自己的客戶
+        if (user.role === 'sales' && customer.ownerId !== user.employeeId) {
+            alert("您只能編輯自己的客戶");
+            return;
+        }
+
+        title.textContent = '編輯客戶';
+        idInput.value = customer.customerId;
+        nameInput.value = customer.name;
+        emailInput.value = customer.email;
+    } else {
+        // 新增模式
+        title.textContent = '新增客戶';
+        idInput.value = '';
+        nameInput.value = '';
+        emailInput.value = '';
+    }
+
+    modal.classList.add('active');
+}
+
+// 關閉 Customer Modal
+window.closeCustomerModal = function() {
+    document.getElementById('customerModal').classList.remove('active');
+}
+
+// 儲存客戶
+window.saveCustomer = function() {
+    const user = JSON.parse(localStorage.getItem('currentUser'));
+    
+    // 權限防護
+    if (user.role === 'viewer') {
+        alert("無權限操作");
+        return;
+    }
+
+    const id = document.getElementById('customerId').value;
+    const name = document.getElementById('customerName').value.trim();
+    const email = document.getElementById('customerEmail').value.trim();
+
+    if (!name || !email) {
+        alert('請填寫完整資訊');
+        return;
+    }
+
+    let customers = getCustomers();
+    const now = new Date().toISOString();
+
+    if (id) {
+        // 編輯客戶
+        const index = customers.findIndex(c => c.customerId === id);
+        if (index === -1) return;
+
+        // Data-level 二次防護
+        if (user.role === 'sales' && customers[index].ownerId !== user.employeeId) {
+            alert("無權限修改此客戶");
+            return;
+        }
+
+        customers[index].name = name;
+        customers[index].email = email;
+        customers[index].updatedAt = now;
+    } else {
+        // 新增客戶
+        const newId = 'C' + String(Date.now()).slice(-4);
+        customers.push({
+            customerId: newId,
+            name: name,
+            email: email,
+            status: "active",
+            ownerId: user.employeeId, // 自動帶入登入者
+            createdAt: now,
+            updatedAt: null
+        });
+    }
+
+    saveCustomers(customers);
+    closeCustomerModal();
+    renderCustomersTable();
+}
+
+// 作廢客戶 (Soft Delete)
+window.voidCustomer = function(id) {
+    const user = JSON.parse(localStorage.getItem('currentUser'));
+    
+    // RBAC 防護：只有 admin 可以作廢
+    if (user.role !== 'admin') {
+        alert("無權限操作：僅管理員可作廢客戶");
+        return;
+    }
+
+    if (confirm('確定要作廢此客戶嗎？作廢後狀態將轉為 inactive。')) {
+        let customers = getCustomers();
+        const customer = customers.find(c => c.customerId === id);
+        if (customer) {
+            customer.status = 'inactive';
+            customer.updatedAt = new Date().toISOString();
+            saveCustomers(customers);
+            renderCustomersTable();
+        }
     }
 }
 

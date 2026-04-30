@@ -71,19 +71,25 @@
 
                 <!-- Orders Section -->
                 <section id="section-orders" class="section-content">
+                    <div class="section-header">
+                        <h2>訂單管理</h2>
+                        <button class="btn-primary" id="addOrderBtn" style="display: none;" onclick="openOrderModal()">+ 新增訂單</button>
+                    </div>
                     <div class="table-container">
                         <table class="data-table">
                             <thead>
                                 <tr>
                                     <th>訂單編號</th>
                                     <th>客戶名稱</th>
+                                    <th>商品名稱</th>
                                     <th>金額</th>
                                     <th>狀態</th>
-                                    <th>日期</th>
+                                    <th>負責人</th>
+                                    <th>操作</th>
                                 </tr>
                             </thead>
                             <tbody id="ordersTableBody">
-                                <!-- 假資料由 JS 填充 -->
+                                <!-- 由 JS 填充 -->
                             </tbody>
                         </table>
                     </div>
@@ -137,6 +143,39 @@
                 </section>
 
             </main>
+        </div>
+    </div>
+
+    <!-- Order Modal -->
+    <div class="modal-overlay" id="orderModal">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3 id="modalTitle">新增訂單</h3>
+                <button class="btn-close" onclick="closeOrderModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="orderForm">
+                    <input type="hidden" id="orderId">
+                    <div class="form-group">
+                        <label for="orderCustomer">客戶名稱</label>
+                        <input type="text" id="orderCustomer" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="orderProduct">商品</label>
+                        <select id="orderProduct" required onchange="handleProductChange()">
+                            <!-- 由 JS 填充 -->
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="orderAmount">金額</label>
+                        <input type="number" id="orderAmount" required>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" onclick="closeOrderModal()">取消</button>
+                <button class="btn-primary" onclick="saveOrder()">儲存</button>
+            </div>
         </div>
     </div>
 

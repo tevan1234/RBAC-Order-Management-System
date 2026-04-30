@@ -3,53 +3,143 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>儀表板 | 訂單管理系統</title>
+    <title>儀表板 | RBAC 訂單管理系統</title>
+    <!-- Google Fonts: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css">
-    <style>
-        .dashboard-container {
-            padding: 40px;
-            max-width: 800px;
-            width: 100%;
-        }
-        .user-info {
-            background: white;
-            padding: 20px;
-            border-radius: 12px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-        }
-        .logout-btn {
-            margin-top: 20px;
-            background: #EF4444;
-            color: white;
-            padding: 8px 16px;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-        }
-    </style>
 </head>
 <body>
-    <div class="dashboard-container">
-        <div class="user-info">
-            <h1>歡迎回來</h1>
-            <p id="welcomeMessage">正在載入...</p>
-            <button class="logout-btn" onclick="logout()">登出</button>
+    <div class="dashboard-layout">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="sidebar-header">
+                <span class="logo-icon">📦</span>
+                <span class="sidebar-logo">RBAC 系統</span>
+            </div>
+            
+            <ul class="sidebar-menu" id="sidebarMenu">
+                <!-- 動態由 JS 渲染 -->
+            </ul>
+
+            <div class="sidebar-footer">
+                <div class="hint-text">v1.0.0 Stable</div>
+            </div>
+        </aside>
+
+        <!-- Main Content -->
+        <div class="main-container">
+            <!-- Topbar -->
+            <header class="topbar">
+                <div class="page-title" id="currentPageTitle">儀表板</div>
+                
+                <div class="user-nav">
+                    <div class="user-info-brief">
+                        <span class="user-id" id="displayEmployeeId">---</span>
+                        <span id="roleBadgeContainer"></span>
+                    </div>
+                    <button class="btn-logout" id="logoutBtn">登出</button>
+                </div>
+            </header>
+
+            <!-- Content Area -->
+            <main class="content-area" id="contentArea">
+                
+                <!-- Dashboard Section -->
+                <section id="section-dashboard" class="section-content active">
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-label">總訂單數</div>
+                            <div class="stat-value">1,284</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">本月營收</div>
+                            <div class="stat-value">$42,500</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-label">待處理項目</div>
+                            <div class="stat-value">12</div>
+                        </div>
+                    </div>
+                    
+                    <div class="unauthorized-card">
+                        <h2>歡迎回來，<span id="welcomeUserName">使用者</span></h2>
+                        <p class="hint-text">請從左側選單選擇功能進行操作。</p>
+                    </div>
+                </section>
+
+                <!-- Orders Section -->
+                <section id="section-orders" class="section-content">
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>訂單編號</th>
+                                    <th>客戶名稱</th>
+                                    <th>金額</th>
+                                    <th>狀態</th>
+                                    <th>日期</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ordersTableBody">
+                                <!-- 假資料由 JS 填充 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Users Section (Admin Only) -->
+                <section id="section-users" class="section-content">
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>員工編號</th>
+                                    <th>姓名</th>
+                                    <th>角色</th>
+                                    <th>最後登入</th>
+                                </tr>
+                            </thead>
+                            <tbody id="usersTableBody">
+                                <!-- 假資料由 JS 填充 -->
+                            </tbody>
+                        </table>
+                    </div>
+                </section>
+
+                <!-- Permissions Section (Admin Only) -->
+                <section id="section-permissions" class="section-content">
+                    <div class="unauthorized-card" style="text-align: left;">
+                        <h2 style="margin-bottom: 20px;">角色權限說明</h2>
+                        <div class="form-group" style="background: #F9FAFB; padding: 20px; border-radius: 12px; margin-bottom: 16px;">
+                            <strong>👑 Admin (系統管理員)</strong>
+                            <p class="hint-text">擁有系統最高權限，可管理使用者、設定權限、查看完整統計資料與訂單。</p>
+                        </div>
+                        <div class="form-group" style="background: #F9FAFB; padding: 20px; border-radius: 12px; margin-bottom: 16px;">
+                            <strong>🧑💼 Sales (業務人員)</strong>
+                            <p class="hint-text">可管理訂單、查看個人與團隊銷售統計，無權進入系統管理頁面。</p>
+                        </div>
+                        <div class="form-group" style="background: #F9FAFB; padding: 20px; border-radius: 12px;">
+                            <strong>👀 Viewer (檢視者)</strong>
+                            <p class="hint-text">僅具備唯讀權限，可查看儀表板統計資訊，無法進行任何新增、修改或刪除操作。</p>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- Unauthorized Message (Security Guard) -->
+                <section id="section-unauthorized" class="section-content">
+                    <div class="unauthorized-card">
+                        <div class="unauthorized-icon">🚫</div>
+                        <h2>無權限存取</h2>
+                        <p class="hint-text">您的帳號角色不具備進入此區域的權限。若有疑問請聯繫系統管理員。</p>
+                    </div>
+                </section>
+
+            </main>
         </div>
     </div>
 
-    <script>
-        const user = JSON.parse(localStorage.getItem('currentUser'));
-        if (!user) {
-            window.location.href = 'index.html';
-        } else {
-            document.getElementById('welcomeMessage').textContent = 
-                `您好，${user.name} (${user.employeeId})，您的角色是：${user.role}`;
-        }
-
-        function logout() {
-            localStorage.removeItem('currentUser');
-            window.location.href = 'index.html';
-        }
-    </script>
+    <script src="js/dashboard.js"></script>
 </body>
 </html>

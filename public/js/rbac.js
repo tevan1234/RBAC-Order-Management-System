@@ -9,16 +9,19 @@ export const menuConfig = {
     { id: 'orders',     label: '訂單管理',     icon: '🛍️' },
     { id: 'customers',  label: '客戶管理',     icon: '👤' },
     { id: 'users',      label: '使用者管理',   icon: '👥' },
-    { id: 'auditlogs',  label: '操作紀錄',     icon: '📝' }
+    { id: 'auditlogs',  label: '操作紀錄',     icon: '📝' },
+    { id: 'change-password', label: '修改密碼',   icon: '🔑' }
   ],
   sales: [
     { id: 'dashboard',  label: '儀表板',       icon: '📊' },
     { id: 'orders',     label: '訂單管理',     icon: '🛍️' },
-    { id: 'customers',  label: '客戶管理',     icon: '👤' }
+    { id: 'customers',  label: '客戶管理',     icon: '👤' },
+    { id: 'change-password', label: '修改密碼',   icon: '🔑' }
   ],
   viewer: [
     { id: 'dashboard',  label: '儀表板 (唯讀)', icon: '👁️' },
-    { id: 'customers',  label: '客戶管理',      icon: '👤' }
+    { id: 'customers',  label: '客戶管理',      icon: '👤' },
+    { id: 'change-password', label: '修改密碼',      icon: '🔑' }
   ]
 };
 
@@ -29,8 +32,13 @@ export function isAdmin(user) {
 }
 
 export function canAccessMenu(user, sectionId) {
+  if (sectionId === 'change-password') return true;
   const items = menuConfig[user?.role] || [];
   return items.some(item => item.id === sectionId);
+}
+
+export function canChangePassword(user) {
+  return !!user?.role;
 }
 
 export function getMenuItems(role) {

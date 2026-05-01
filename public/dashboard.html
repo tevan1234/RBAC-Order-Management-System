@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -10,6 +11,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css">
 </head>
+
 <body>
     <div class="dashboard-layout">
         <!-- Sidebar -->
@@ -18,7 +20,7 @@
                 <span class="logo-icon">📦</span>
                 <span class="sidebar-logo">RBAC 系統</span>
             </div>
-            
+
             <ul class="sidebar-menu" id="sidebarMenu">
                 <!-- 動態由 JS 渲染 -->
             </ul>
@@ -30,10 +32,14 @@
 
         <!-- Main Content -->
         <div class="main-container">
+            <!-- Mobile Header -->
+            <header class="mobile-header">
+                <button class="hamburger" id="mobileMenuBtn">☰</button>
+            </header>
             <!-- Topbar -->
             <header class="topbar">
                 <div class="page-title" id="currentPageTitle">儀表板</div>
-                
+
                 <div class="user-nav">
                     <div class="user-info-brief">
                         <span class="user-id" id="displayEmployeeId">---</span>
@@ -45,7 +51,7 @@
 
             <!-- Content Area -->
             <main class="content-area" id="contentArea">
-                
+
                 <!-- Dashboard Section -->
                 <section id="section-dashboard" class="section-content active">
                     <div class="stats-grid">
@@ -62,7 +68,7 @@
                             <div class="stat-value">12</div>
                         </div>
                     </div>
-                    
+
                     <div class="unauthorized-card">
                         <h2>歡迎回來，<span id="welcomeUserName">使用者</span></h2>
                         <p class="hint-text">請從左側選單選擇功能進行操作。</p>
@@ -96,7 +102,7 @@
                 </section>
 
                 <!-- Customers Section -->
-                <section id="section-customers" class="section-content">
+                <section id="section-customers" class="section-content theme-customer">
                     <div class="section-header">
                         <h2>客戶管理</h2>
                         <button class="btn-primary" id="addCustomerBtn" style="display: none;">+ 新增客戶</button>
@@ -123,7 +129,7 @@
                 </section>
 
                 <!-- Users Section (Admin Only) -->
-                <section id="section-users" class="section-content">
+                <section id="section-users" class="section-content theme-user">
                     <div class="section-header">
                         <h2>使用者管理 (User Management)</h2>
                         <button class="btn-primary" id="addUserBtn">+ 新增使用者</button>
@@ -167,6 +173,35 @@
                                 <!-- 由 JS 填充 -->
                             </tbody>
                         </table>
+                    </div>
+                </section>
+
+                <!-- Change Password Section -->
+                <section id="section-change-password" class="section-content centered-flex">
+                    <div class="section-header" style="display: flex; flex-direction: column; align-items: center; text-align: center; margin-bottom: 32px; gap: 8px;">
+                        <h2>安全中心：修改密碼</h2>
+                        <p class="hint-text">建議定期更換密碼以保護帳號安全</p>
+                    </div>
+                    <div class="form-card glass">
+                        <form id="changePasswordForm" autocomplete="off">
+                            <div class="form-group">
+                                <label for="currentPassword">目前密碼</label>
+                                <input type="password" id="currentPassword" placeholder="請輸入目前密碼" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="newPassword">新密碼</label>
+                                <input type="password" id="newPassword" placeholder="請輸入新密碼（至少 6 碼）" required
+                                    minlength="6">
+                            </div>
+                            <div class="form-group">
+                                <label for="confirmPassword">確認新密碼</label>
+                                <input type="password" id="confirmPassword" placeholder="請再次輸入新密碼" required
+                                    minlength="6">
+                            </div>
+                            <div class="form-actions">
+                                <button type="submit" class="btn-primary">儲存變更</button>
+                            </div>
+                        </form>
                     </div>
                 </section>
 
@@ -279,6 +314,10 @@
             </div>
         </div>
     </div>
+    <!-- GSAP -->
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
     <script type="module" src="js/dashboard.js"></script>
 </body>
+
 </html>

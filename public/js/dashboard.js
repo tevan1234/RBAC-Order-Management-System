@@ -20,6 +20,108 @@ import {
 import { addLog } from './audit.js';
 import { formatDate, generateEmployeeId } from './utils.js';
 
+// ============================================================
+// 全域通知系統
+// type: 'success' | 'error' | 'warning' | 'info'
+// ============================================================
+
+// ── 全域通知佇列 ──
+let activeNotifications = [];
+const NOTIFICATION_SPACING = 16;
+const NOTIFICATION_TOP_START = 24;
+
+function showNotification(message, type = 'info', duration = 4000) {
+  const notification = document.createElement('div');
+  notification.className = `notification notification-${type}`;
+
+  const iconMap = {
+    success: '✅',
+    error: '❌',
+    warning: '⚠️',
+    info: 'ℹ️'
+  };
+
+  notification.innerHTML = `
+    <span class="notification-icon">${iconMap[type] || 'ℹ️'}</span>
+    <span class="notification-message">${message}</span>
+    <button class="notification-close" aria-label="關閉">×</button>
+  `;
+
+  document.body.appendChild(notification);
+  activeNotifications.push(notification);
+
+  // 初始化位置與透明度 (GSAP)
+  gsap.set(notification, {
+    x: 100,
+    opacity: 0,
+    display: 'flex',
+    y: calculateNotificationTop(notification)
+  });
+
+  // 入場動畫
+  gsap.to(notification, {
+    x: 0,
+    opacity: 1,
+    duration: 0.5,
+    ease: "back.out(1.7)"
+  });
+
+  // 更新所有現有通知的位置
+  updateNotificationsPosition();
+
+  // 關閉按鈕
+  notification.querySelector('.notification-close').addEventListener('click', () => {
+    dismissNotification(notification);
+  });
+
+  // 自動消失 (GSAP delayedCall 比 setTimeout 更精確且易於管理)
+  const autoHide = gsap.delayedCall(duration / 1000, () => dismissNotification(notification));
+
+  // 滑鼠停留時暫停計時
+  notification.addEventListener('mouseenter', () => autoHide.pause());
+  notification.addEventListener('mouseleave', () => autoHide.resume());
+}
+
+function calculateNotificationTop(el) {
+  let top = NOTIFICATION_TOP_START;
+  const index = activeNotifications.indexOf(el);
+  for (let i = 0; i < index; i++) {
+    top += activeNotifications[i].offsetHeight + NOTIFICATION_SPACING;
+  }
+  return top;
+}
+
+function updateNotificationsPosition() {
+  let currentTop = NOTIFICATION_TOP_START;
+  activeNotifications.forEach((el) => {
+    gsap.to(el, {
+      y: currentTop,
+      duration: 0.4,
+      ease: "power2.out"
+    });
+    currentTop += el.offsetHeight + NOTIFICATION_SPACING;
+  });
+}
+
+function dismissNotification(el) {
+  const index = activeNotifications.indexOf(el);
+  if (index > -1) {
+    activeNotifications.splice(index, 1);
+  }
+
+  // 退場動畫
+  gsap.to(el, {
+    x: 50,
+    opacity: 0,
+    duration: 0.3,
+    ease: "power2.in",
+    onComplete: () => {
+      el.remove();
+      updateNotificationsPosition(); // 舊通知移除後，下方的通知往上遞補
+    }
+  });
+}
+
 // ── 全域快取 ──
 let currentUser = null;
 
@@ -44,8 +146,30 @@ document.addEventListener('DOMContentLoaded', () => {
   // 4. 事件綁定
   bindEvents();
 
-  // 5. 預設載入 Dashboard
-  navigateTo('dashboard');
+  // 5. 處理待顯示的通知 (放在初始化之後，確保 DOM 已準備好)
+  const pending = sessionStorage.getItem('pendingNotification');
+  if (pending) {
+    try {
+      const { message, type } = JSON.parse(pending);
+      // 稍微延遲以確保動畫流暢
+      setTimeout(() => showNotification(message, type), 300);
+    } catch (_) { }
+    sessionStorage.removeItem('pendingNotification');
+  }
+
+  // 6. 強制修改密碼檢查
+  const urlParams = new URLSearchParams(window.location.search);
+  const isChangePwdAction = urlParams.get('action') === 'change-password';
+
+  if (currentUser.mustChangePassword || isChangePwdAction) {
+    // 如果是強制改密，且不在該頁面，則導航過去
+    showNotification('為了帳號安全，請先修改您的初始密碼', 'warning');
+    navigateTo('change-password');
+    // 清理 URL 避免重整後重複處理參數 (但保留狀態由 currentUser 控管)
+    if (isChangePwdAction) history.replaceState(null, '', 'dashboard.html');
+  } else {
+    navigateTo('dashboard');
+  }
 });
 
 // ============================================================
@@ -102,7 +226,25 @@ function navigateTo(sectionId) {
 
   if (canAccessMenu(currentUser, sectionId)) {
     const target = document.getElementById(`section-${sectionId}`);
-    if (target) target.classList.add('active');
+    if (target) {
+      target.classList.add('active');
+      
+      // GSAP Animation for Change Password
+      if (sectionId === 'change-password') {
+        gsap.fromTo(target.querySelector('.form-card'),
+          { y: 40, opacity: 0, scale: 0.95 },
+          { y: 0, opacity: 1, scale: 1, duration: 0.6, ease: "back.out(1.5)" }
+        );
+        gsap.fromTo(target.querySelectorAll('.form-group'),
+          { x: -30, opacity: 0 },
+          { x: 0, opacity: 1, duration: 0.4, stagger: 0.1, delay: 0.2, ease: "power2.out" }
+        );
+        gsap.fromTo(target.querySelector('.form-actions'),
+          { y: 20, opacity: 0 },
+          { y: 0, opacity: 1, duration: 0.4, delay: 0.5, ease: "power2.out" }
+        );
+      }
+    }
 
     const items = getMenuItems(currentUser.role);
     const menuItem = items.find(i => i.id === sectionId);
@@ -122,10 +264,11 @@ function navigateTo(sectionId) {
 
 function loadSectionData(sectionId) {
   switch (sectionId) {
-    case 'orders':    renderOrdersTable();    break;
+    case 'orders': renderOrdersTable(); break;
     case 'customers': renderCustomersTable(); break;
-    case 'users':     if (isAdmin(currentUser)) renderUsersTable();     break;
+    case 'users': if (isAdmin(currentUser)) renderUsersTable(); break;
     case 'auditlogs': if (isAdmin(currentUser)) renderAuditLogsTable(); break;
+    case 'change-password': renderChangePasswordSection(); break;
   }
 }
 
@@ -183,14 +326,14 @@ function renderOrdersTable() {
 }
 
 function openOrderModal(orderId = null) {
-  if (!canCreateOrder(currentUser)) { alert('無權限操作'); return; }
+  if (!canCreateOrder(currentUser)) { showNotification('無權限操作', 'error'); return; }
 
-  const modal          = document.getElementById('orderModal');
-  const title          = document.getElementById('modalTitle');
-  const idInput        = document.getElementById('orderId');
-  const customerInput  = document.getElementById('orderCustomer');
-  const productSelect  = document.getElementById('orderProduct');
-  const amountInput    = document.getElementById('orderAmount');
+  const modal = document.getElementById('orderModal');
+  const title = document.getElementById('modalTitle');
+  const idInput = document.getElementById('orderId');
+  const customerInput = document.getElementById('orderCustomer');
+  const productSelect = document.getElementById('orderProduct');
+  const amountInput = document.getElementById('orderAmount');
 
   // 填充商品選單
   productSelect.innerHTML = '<option value="">請選擇商品</option>' +
@@ -198,21 +341,21 @@ function openOrderModal(orderId = null) {
 
   if (orderId) {
     const orders = getOrders();
-    const order  = orders.find(o => o.id === orderId);
+    const order = orders.find(o => o.id === orderId);
     if (!order) return;
-    if (!canEditOrder(currentUser, order)) { alert('無權限編輯此訂單'); return; }
+    if (!canEditOrder(currentUser, order)) { showNotification('無權限編輯此訂單', 'error'); return; }
 
-    title.textContent        = '編輯訂單';
-    idInput.value            = order.id;
-    customerInput.value      = order.customer;
-    productSelect.value      = order.productId;
-    amountInput.value        = order.amount;
+    title.textContent = '編輯訂單';
+    idInput.value = order.id;
+    customerInput.value = order.customer;
+    productSelect.value = order.productId;
+    amountInput.value = order.amount;
   } else {
-    title.textContent   = '新增訂單';
-    idInput.value       = '';
+    title.textContent = '新增訂單';
+    idInput.value = '';
     customerInput.value = '';
     productSelect.value = '';
-    amountInput.value   = '';
+    amountInput.value = '';
   }
 
   modal.classList.add('active');
@@ -229,14 +372,14 @@ function handleProductChange() {
 }
 
 function saveOrder() {
-  if (!canCreateOrder(currentUser)) { alert('無權限操作'); return; }
+  if (!canCreateOrder(currentUser)) { showNotification('無權限操作', 'error'); return; }
 
-  const id        = document.getElementById('orderId').value;
-  const customer  = document.getElementById('orderCustomer').value.trim();
+  const id = document.getElementById('orderId').value;
+  const customer = document.getElementById('orderCustomer').value.trim();
   const productId = document.getElementById('orderProduct').value;
-  const amount    = document.getElementById('orderAmount').value;
+  const amount = document.getElementById('orderAmount').value;
 
-  if (!customer || !productId || !amount) { alert('請填寫完整資訊'); return; }
+  if (!customer || !productId || !amount) { showNotification('請填寫完整資訊', 'warning'); return; }
 
   const allOrders = getOrders();
   const now = new Date().toISOString();
@@ -245,11 +388,11 @@ function saveOrder() {
     // 編輯
     const order = allOrders.find(o => o.id === id);
     if (!order) return;
-    if (!canEditOrder(currentUser, order)) { alert('無權限修改此訂單'); return; }
+    if (!canEditOrder(currentUser, order)) { showNotification('無權限修改此訂單', 'error'); return; }
 
-    order.customer  = customer;
+    order.customer = customer;
     order.productId = productId;
-    order.amount    = Number(amount);
+    order.amount = Number(amount);
     order.updatedAt = now;
 
     saveOrders(allOrders);
@@ -273,14 +416,14 @@ function saveOrder() {
 }
 
 function voidOrder(id) {
-  if (!canVoidOrder(currentUser)) { alert('無權限操作：僅管理員可作廢訂單'); return; }
+  if (!canVoidOrder(currentUser)) { showNotification('無權限操作：僅管理員可作廢訂單', 'error'); return; }
   if (!confirm('確定要作廢此訂單嗎？作廢後將無法修改。')) return;
 
   const allOrders = getOrders();
   const order = allOrders.find(o => o.id === id);
   if (!order) return;
 
-  order.status    = '已作廢';
+  order.status = '已作廢';
   order.updatedAt = new Date().toISOString();
 
   saveOrders(allOrders);
@@ -301,8 +444,8 @@ function renderCustomersTable() {
 
   tbody.innerHTML = customers.map(customer => {
     const badgeClass = customer.status === 'active' ? 'badge-success' : 'badge-secondary';
-    const ownerUser  = usersList.find(u => u.employeeId === customer.ownerId);
-    const ownerName  = ownerUser ? ownerUser.name : customer.ownerId;
+    const ownerUser = usersList.find(u => u.employeeId === customer.ownerId);
+    const ownerName = ownerUser ? ownerUser.name : customer.ownerId;
 
     let actionsHtml = '';
     if (customer.status !== 'inactive') {
@@ -337,29 +480,29 @@ function renderCustomersTable() {
 }
 
 function openCustomerModal(customerId = null) {
-  if (!canCreateCustomer(currentUser)) { alert('無權限操作'); return; }
+  if (!canCreateCustomer(currentUser)) { showNotification('無權限操作', 'error'); return; }
 
-  const modal      = document.getElementById('customerModal');
-  const title      = document.getElementById('customerModalTitle');
-  const idInput    = document.getElementById('customerId');
-  const nameInput  = document.getElementById('customerName');
+  const modal = document.getElementById('customerModal');
+  const title = document.getElementById('customerModalTitle');
+  const idInput = document.getElementById('customerId');
+  const nameInput = document.getElementById('customerName');
   const emailInput = document.getElementById('customerEmail');
 
   if (customerId) {
     const customers = getCustomers();
-    const customer  = customers.find(c => c.customerId === customerId);
+    const customer = customers.find(c => c.customerId === customerId);
     if (!customer) return;
-    if (!canEditCustomer(currentUser, customer)) { alert('您只能編輯自己的客戶'); return; }
+    if (!canEditCustomer(currentUser, customer)) { showNotification('您只能編輯自己的客戶', 'error'); return; }
 
-    title.textContent  = '編輯客戶';
-    idInput.value      = customer.customerId;
-    nameInput.value    = customer.name;
-    emailInput.value   = customer.email;
+    title.textContent = '編輯客戶';
+    idInput.value = customer.customerId;
+    nameInput.value = customer.name;
+    emailInput.value = customer.email;
   } else {
     title.textContent = '新增客戶';
-    idInput.value     = '';
-    nameInput.value   = '';
-    emailInput.value  = '';
+    idInput.value = '';
+    nameInput.value = '';
+    emailInput.value = '';
   }
 
   modal.classList.add('active');
@@ -370,13 +513,13 @@ function closeCustomerModal() {
 }
 
 function saveCustomer() {
-  if (!canCreateCustomer(currentUser)) { alert('無權限操作'); return; }
+  if (!canCreateCustomer(currentUser)) { showNotification('無權限操作', 'error'); return; }
 
-  const id    = document.getElementById('customerId').value;
-  const name  = document.getElementById('customerName').value.trim();
+  const id = document.getElementById('customerId').value;
+  const name = document.getElementById('customerName').value.trim();
   const email = document.getElementById('customerEmail').value.trim();
 
-  if (!name || !email) { alert('請填寫完整資訊'); return; }
+  if (!name || !email) { showNotification('請填寫完整資訊', 'warning'); return; }
 
   const allCustomers = getCustomers();
   const now = new Date().toISOString();
@@ -384,10 +527,10 @@ function saveCustomer() {
   if (id) {
     const customer = allCustomers.find(c => c.customerId === id);
     if (!customer) return;
-    if (!canEditCustomer(currentUser, customer)) { alert('無權限修改此客戶'); return; }
+    if (!canEditCustomer(currentUser, customer)) { showNotification('無權限修改此客戶', 'error'); return; }
 
-    customer.name      = name;
-    customer.email     = email;
+    customer.name = name;
+    customer.email = email;
     customer.updatedAt = now;
 
     saveCustomers(allCustomers);
@@ -410,14 +553,14 @@ function saveCustomer() {
 }
 
 function voidCustomer(id) {
-  if (!canVoidCustomer(currentUser)) { alert('無權限操作：僅管理員可作廢客戶'); return; }
+  if (!canVoidCustomer(currentUser)) { showNotification('無權限操作：僅管理員可作廢客戶', 'error'); return; }
   if (!confirm('確定要作廢此客戶嗎？作廢後狀態將轉為 inactive。')) return;
 
   const allCustomers = getCustomers();
   const customer = allCustomers.find(c => c.customerId === id);
   if (!customer) return;
 
-  customer.status    = 'inactive';
+  customer.status = 'inactive';
   customer.updatedAt = new Date().toISOString();
 
   saveCustomers(allCustomers);
@@ -477,12 +620,12 @@ function renderUsersTable() {
 }
 
 function openUserModal(employeeId = null) {
-  if (!canEditUser(currentUser)) { alert('無權限'); return; }
+  if (!canEditUser(currentUser)) { showNotification('無權限', 'error'); return; }
 
-  const modal      = document.getElementById('userModal');
-  const title      = document.getElementById('userModalTitle');
-  const idInput    = document.getElementById('userEmployeeId');
-  const nameInput  = document.getElementById('userName');
+  const modal = document.getElementById('userModal');
+  const title = document.getElementById('userModalTitle');
+  const idInput = document.getElementById('userEmployeeId');
+  const nameInput = document.getElementById('userName');
   const emailInput = document.getElementById('userEmail');
   const roleSelect = document.getElementById('userRole');
 
@@ -493,22 +636,22 @@ function openUserModal(employeeId = null) {
     const u = users.find(x => x.employeeId === employeeId);
     if (!u) return;
 
-    title.textContent     = '編輯使用者';
-    idInput.value         = u.employeeId;
-    idInput.dataset.mode  = 'edit';
-    nameInput.value       = u.name;
-    emailInput.value      = u.email;
-    roleSelect.value      = u.role;
+    title.textContent = '編輯使用者';
+    idInput.value = u.employeeId;
+    idInput.dataset.mode = 'edit';
+    nameInput.value = u.name;
+    emailInput.value = u.email;
+    roleSelect.value = u.role;
   } else {
     // 新增模式
     const newEmployeeId = generateEmployeeId(users);
 
-    title.textContent     = '新增使用者';
-    idInput.value         = newEmployeeId;
-    idInput.dataset.mode  = 'create';
-    nameInput.value       = '';
-    emailInput.value      = `${newEmployeeId}@test.com`;
-    roleSelect.value      = 'viewer';
+    title.textContent = '新增使用者';
+    idInput.value = newEmployeeId;
+    idInput.dataset.mode = 'create';
+    nameInput.value = '';
+    emailInput.value = `${newEmployeeId}@test.com`;
+    roleSelect.value = 'viewer';
   }
 
   modal.classList.add('active');
@@ -519,16 +662,16 @@ function closeUserModal() {
 }
 
 function saveUser() {
-  if (!canEditUser(currentUser)) { alert('無權限操作'); return; }
+  if (!canEditUser(currentUser)) { showNotification('無權限操作', 'error'); return; }
 
-  const idInput    = document.getElementById('userEmployeeId');
+  const idInput = document.getElementById('userEmployeeId');
   const employeeId = idInput.value.trim();
-  const name       = document.getElementById('userName').value.trim();
-  const email      = document.getElementById('userEmail').value.trim();
-  const role       = document.getElementById('userRole').value;
-  const isEdit     = idInput.dataset.mode === 'edit';
+  const name = document.getElementById('userName').value.trim();
+  const email = document.getElementById('userEmail').value.trim();
+  const role = document.getElementById('userRole').value;
+  const isEdit = idInput.dataset.mode === 'edit';
 
-  if (!employeeId || !name || !email) { alert('請填寫必填資訊'); return; }
+  if (!employeeId || !name || !email) { showNotification('請填寫必填資訊', 'warning'); return; }
 
   const users = getUsers();
 
@@ -538,7 +681,7 @@ function saveUser() {
       // 角色變更保護：不可改自己角色 + 最後 admin 保護
       const roleCheck = canChangeRole(users, currentUser, users[index], role);
       if (!roleCheck.allowed) {
-        alert(roleCheck.reason);
+        showNotification(roleCheck.reason, 'error');
         return;
       }
 
@@ -550,7 +693,7 @@ function saveUser() {
     }
   } else {
     if (users.some(u => u.employeeId === employeeId)) {
-      alert('員工編號已存在');
+      showNotification('員工編號已存在', 'error');
       return;
     }
     users.push({
@@ -568,18 +711,18 @@ function saveUser() {
 }
 
 function deactivateUser(targetEmployeeId) {
-  const users  = getUsers();
+  const users = getUsers();
   const target = users.find(u => u.employeeId === targetEmployeeId);
   if (!target) return;
 
   if (!canDeactivateUser(currentUser, target)) {
-    alert('無法停用此使用者');
+    showNotification('無法停用此使用者', 'error');
     return;
   }
 
   // 最後 admin 保護
   if (target.role === 'admin' && !validateLastAdmin(users)) {
-    alert('系統至少需保留一位管理員');
+    showNotification('系統至少需保留一位管理員', 'error');
     return;
   }
 
@@ -601,14 +744,14 @@ function renderAuditLogsTable() {
   const tbody = document.getElementById('auditLogsTableBody');
   if (!tbody) return;
 
-  const logs      = getLogs();
+  const logs = getLogs();
   const usersList = getUsers();
 
   // 依時間降冪排序
   logs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
   tbody.innerHTML = logs.map(log => {
-    const logUser     = usersList.find(u => u.employeeId === log.userId);
+    const logUser = usersList.find(u => u.employeeId === log.userId);
     const logUserName = logUser ? logUser.name : log.userId;
 
     return `
@@ -634,6 +777,37 @@ function bindEvents() {
     window.location.href = 'index.html';
   });
 
+  // 手機版選單
+  const sidebar = document.getElementById('sidebar');
+  const overlay = document.getElementById('sidebarOverlay');
+
+  const toggleSidebar = (show) => {
+    if (show) {
+      sidebar?.classList.add('mobile-active');
+      overlay?.classList.add('active');
+    } else {
+      sidebar?.classList.remove('mobile-active');
+      overlay?.classList.remove('active');
+    }
+  };
+
+  document.getElementById('mobileMenuBtn')?.addEventListener('click', () => {
+    const isActive = sidebar?.classList.contains('mobile-active');
+    toggleSidebar(!isActive);
+  });
+
+  // 點擊遮罩關閉側邊欄
+  overlay?.addEventListener('click', () => {
+    toggleSidebar(false);
+  });
+
+  // 點擊選單項目後自動收起手機版側邊欄
+  document.querySelectorAll('.menu-item').forEach(el => {
+    el.addEventListener('click', () => {
+      toggleSidebar(false);
+    });
+  });
+
   // Order Modal 按鈕
   document.getElementById('addOrderBtn')?.addEventListener('click', () => openOrderModal());
   document.querySelector('#orderModal .btn-close')?.addEventListener('click', closeOrderModal);
@@ -652,4 +826,54 @@ function bindEvents() {
   document.querySelector('#userModal .btn-close')?.addEventListener('click', closeUserModal);
   document.querySelector('#userModal .btn-secondary')?.addEventListener('click', closeUserModal);
   document.querySelector('#userModal .btn-primary')?.addEventListener('click', saveUser);
+}
+
+// ============================================================
+// Change Password
+// ============================================================
+
+function renderChangePasswordSection() {
+  const form = document.getElementById('changePasswordForm');
+  if (!form) return;
+
+  // 避免重複綁定
+  form.onsubmit = null;
+  form.onsubmit = (e) => {
+    e.preventDefault();
+
+    const currentPassword = document.getElementById('currentPassword').value;
+    const newPassword = document.getElementById('newPassword').value;
+    const confirmPassword = document.getElementById('confirmPassword').value;
+
+    if (newPassword !== confirmPassword) {
+      showNotification('兩次輸入的密碼不一致', 'error');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      showNotification('密碼長度至少需要 6 個字元', 'error');
+      return;
+    }
+
+    const users = getUsers();
+    const index = users.findIndex(u => u.employeeId === currentUser.employeeId);
+
+    if (index === -1) {
+      showNotification('找不到使用者資料，請重新登入', 'error');
+      return;
+    }
+
+    if (users[index].password !== currentPassword) {
+      showNotification('目前密碼輸入錯誤', 'error');
+      return;
+    }
+
+    users[index].password = newPassword;
+    users[index].mustChangePassword = false;
+    saveUsers(users);
+
+    addLog('CHANGE_PASSWORD', currentUser.employeeId, currentUser);
+    form.reset();
+    showNotification('密碼已成功更新', 'success');
+  };
 }

@@ -35,14 +35,20 @@ function handleLogin(event) {
     employeeId: user.employeeId,
     role: user.role,
     name: user.name,
+    mustChangePassword: user.mustChangePassword, // 新增此屬性
     loginAt: new Date().toISOString()
   };
 
   setCurrentUser(sessionInfo);
 
+  sessionStorage.setItem('pendingNotification', JSON.stringify({
+    message: `歡迎回來，${user.name || user.employeeId}！`,
+    type: 'success'
+  }));
+
   // 首次登入強制變更密碼
   if (user.mustChangePassword) {
-    window.location.href = 'change-password.html';
+    window.location.href = 'dashboard.html?action=change-password';
   } else {
     window.location.href = 'dashboard.html';
   }

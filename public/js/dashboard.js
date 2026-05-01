@@ -1,670 +1,655 @@
-// RBAC Configuration
-const menuConfig = {
-    admin: [
-        { id: 'dashboard', label: '儀表板', icon: '📊' },
-        { id: 'customers', label: '客戶管理', icon: '👤' },
-        { id: 'orders', label: '訂單管理', icon: '🛍️' },
-        { id: 'users', label: '使用者管理', icon: '👥' },
-        { id: 'permissions', label: '權限設定', icon: '⚙️' }
-    ],
-    sales: [
-        { id: 'dashboard', label: '儀表板', icon: '📊' },
-        { id: 'customers', label: '客戶管理', icon: '👤' },
-        { id: 'orders', label: '訂單管理', icon: '🛍️' }
-    ],
-    viewer: [
-        { id: 'dashboard', label: '儀表板 (唯讀)', icon: '👁️' },
-        { id: 'customers', label: '客戶管理', icon: '👤' }
-    ]
-};
+// ============================================================
+// dashboard.js — UI 渲染 + 事件綁定 + Flow 控制 (ES Module)
+// ============================================================
 
-// 商品查表
-const defaultProducts = [
-  { productId: "P001", name: "iPhone 15", price: 1200 },
-  { productId: "P002", name: "MacBook Air", price: 2400 },
-  { productId: "P003", name: "iPad Pro", price: 3600 }
-];
+import {
+  canAccessMenu, getMenuItems, isAdmin,
+  canEditOrder, canVoidOrder, canCreateOrder,
+  canEditCustomer, canVoidCustomer, canCreateCustomer,
+  canEditUser, canDeactivateUser, validateLastAdmin, canChangeRole
+} from './rbac.js';
 
-// Initialize Dashboard
+import {
+  initData, getCurrentUser, clearCurrentUser,
+  getOrders, getVisibleOrders, saveOrders,
+  getCustomers, getVisibleCustomers, saveCustomers,
+  getUsers, saveUsers,
+  getLogs, defaultProducts
+} from './data.js';
+
+import { addLog } from './audit.js';
+import { formatDate, generateEmployeeId } from './utils.js';
+
+// ── 全域快取 ──
+let currentUser = null;
+
+// ============================================================
+// 初始化
+// ============================================================
+
 document.addEventListener('DOMContentLoaded', () => {
-    // 1. RBAC Guard - 檢查登入狀態
-    const userStr = localStorage.getItem('currentUser');
-    if (!userStr) {
-        window.location.href = 'index.html';
-        return;
-    }
+  // 1. RBAC Guard
+  currentUser = getCurrentUser();
+  if (!currentUser || !currentUser.role) {
+    window.location.href = 'index.html';
+    return;
+  }
 
-    let user;
-    try {
-        user = JSON.parse(userStr);
-    } catch (e) {
-        console.error('Failed to parse user session', e);
-        window.location.href = 'index.html';
-        return;
-    }
+  // 2. 初始化資料
+  initData();
 
-    if (!user || !user.role) {
-        window.location.href = 'index.html';
-        return;
-    }
+  // 3. UI 初始化
+  initUI();
 
-    // 2. 初始化資料庫
-    initData();
+  // 4. 事件綁定
+  bindEvents();
 
-    // 3. 初始化 UI
-    initUI(user);
-    
-    // 4. 綁定事件
-    bindEvents();
-    
-    // 5. 預設載入 Dashboard
-    navigateTo('dashboard', user);
+  // 5. 預設載入 Dashboard
+  navigateTo('dashboard');
 });
 
-function initData() {
-    // Orders 資料
-    const storedOrders = localStorage.getItem('orders');
-    let shouldResetOrders = !storedOrders;
+// ============================================================
+// UI 初始化
+// ============================================================
 
-    if (storedOrders) {
-        try {
-            const parsedOrders = JSON.parse(storedOrders);
-            // 檢查舊版結構，如果沒有 productId 就強制重置
-            if (parsedOrders.length > 0 && !parsedOrders[0].productId) {
-                shouldResetOrders = true;
-            }
-        } catch (e) {
-            shouldResetOrders = true;
-        }
-    }
+function initUI() {
+  // Topbar
+  document.getElementById('displayEmployeeId').textContent = currentUser.name || currentUser.employeeId;
+  document.getElementById('welcomeUserName').textContent = currentUser.name || currentUser.employeeId;
 
-    if (shouldResetOrders) {
-        const defaultOrders = [
-            { id: 'ORD-1', customer: "王小明", productId: "P001", amount: 1200, status: "已完成", ownerId: "EMP001", createdAt: "2026-05-01T10:00:00Z", updatedAt: "2026-05-01T10:00:00Z" },
-            { id: 'ORD-2', customer: "李小華", productId: "P002", amount: 2400, status: "處理中", ownerId: "EMP002", createdAt: "2026-05-01T10:00:00Z", updatedAt: "2026-05-01T10:00:00Z" },
-            { id: 'ORD-3', customer: "陳大文", productId: "P003", amount: 3600, status: "處理中", ownerId: "EMP002", createdAt: "2026-05-01T10:00:00Z", updatedAt: "2026-05-01T10:00:00Z" }
-        ];
-        localStorage.setItem('orders', JSON.stringify(defaultOrders));
-    }
+  // Role Badge
+  const badgeContainer = document.getElementById('roleBadgeContainer');
+  const displayRole = currentUser.role.charAt(0).toUpperCase() + currentUser.role.slice(1);
+  badgeContainer.innerHTML = `<span class="badge badge-${currentUser.role}">${displayRole}</span>`;
 
-    // Customers 資料
-    if (!localStorage.getItem('customers')) {
-        const defaultCustomers = [
-            {
-                customerId: "C001",
-                name: "王小明",
-                email: "customer1@test.com",
-                ownerId: "EMP002",
-                status: "active",
-                createdAt: "2026-05-01T10:00:00Z",
-                updatedAt: "2026-05-01T10:00:00Z"
-            },
-            {
-                customerId: "C002",
-                name: "李小華",
-                email: "customer2@test.com",
-                ownerId: "EMP001",
-                status: "active",
-                createdAt: "2026-05-01T09:00:00Z",
-                updatedAt: "2026-05-01T09:30:00Z"
-            }
-        ];
-        localStorage.setItem('customers', JSON.stringify(defaultCustomers));
-    }
+  // Sidebar
+  renderSidebar();
+
+  // 按鈕顯示
+  const addOrderBtn = document.getElementById('addOrderBtn');
+  if (addOrderBtn) addOrderBtn.style.display = canCreateOrder(currentUser) ? 'block' : 'none';
+
+  const addCustomerBtn = document.getElementById('addCustomerBtn');
+  if (addCustomerBtn) addCustomerBtn.style.display = canCreateCustomer(currentUser) ? 'block' : 'none';
 }
 
-function initUI(user) {
-    // Topbar 資訊
-    document.getElementById('displayEmployeeId').textContent = user.name || user.employeeId;
-    document.getElementById('welcomeUserName').textContent = user.name || user.employeeId;
-    
-    // Role Badge
-    const badgeContainer = document.getElementById('roleBadgeContainer');
-    const badgeClass = `badge badge-${user.role}`;
-    const displayRole = user.role.charAt(0).toUpperCase() + user.role.slice(1);
-    badgeContainer.innerHTML = `<span class="${badgeClass}">${displayRole}</span>`;
+function renderSidebar() {
+  const menuContainer = document.getElementById('sidebarMenu');
+  const items = getMenuItems(currentUser.role);
 
-    // 產生側邊欄選單
-    renderSidebar(user.role);
+  menuContainer.innerHTML = items.map(item => `
+    <li class="menu-item" data-target="${item.id}">
+      <span class="menu-icon">${item.icon}</span>
+      <span class="menu-text">${item.label}</span>
+    </li>
+  `).join('');
 
-    // 控制 Orders 區塊的「新增訂單」按鈕
-    const addOrderBtn = document.getElementById('addOrderBtn');
-    if (addOrderBtn) {
-        addOrderBtn.style.display = (user.role === 'admin' || user.role === 'sales') ? 'block' : 'none';
-    }
-
-    // 控制 Customers 區塊的「新增客戶」按鈕
-    const addCustomerBtn = document.getElementById('addCustomerBtn');
-    if (addCustomerBtn) {
-        addCustomerBtn.style.display = (user.role === 'admin' || user.role === 'sales') ? 'block' : 'none';
-    }
-}
-
-function renderSidebar(role) {
-    const menuContainer = document.getElementById('sidebarMenu');
-    const allowedMenus = menuConfig[role] || [];
-    
-    menuContainer.innerHTML = allowedMenus.map(item => `
-        <li class="menu-item" data-target="${item.id}">
-            <span class="menu-icon">${item.icon}</span>
-            <span class="menu-text">${item.label}</span>
-        </li>
-    `).join('');
-
-    // 綁定選單點擊事件
-    document.querySelectorAll('.menu-item').forEach(el => {
-        el.addEventListener('click', (e) => {
-            const targetId = e.currentTarget.getAttribute('data-target');
-            const user = JSON.parse(localStorage.getItem('currentUser'));
-            navigateTo(targetId, user);
-        });
+  // 綁定選單點擊
+  menuContainer.querySelectorAll('.menu-item').forEach(el => {
+    el.addEventListener('click', () => {
+      navigateTo(el.getAttribute('data-target'));
     });
+  });
 }
 
-function navigateTo(sectionId, user) {
-    // 驗證權限
-    const allowedMenus = menuConfig[user.role] || [];
-    const isAllowed = allowedMenus.some(item => item.id === sectionId);
+// ============================================================
+// 導覽
+// ============================================================
 
-    // 隱藏所有 section
-    document.querySelectorAll('.section-content').forEach(section => {
-        section.classList.remove('active');
-    });
+function navigateTo(sectionId) {
+  // 隱藏所有 section
+  document.querySelectorAll('.section-content').forEach(s => s.classList.remove('active'));
 
-    if (isAllowed) {
-        // 顯示目標 section
-        const targetSection = document.getElementById(`section-${sectionId}`);
-        if (targetSection) {
-            targetSection.classList.add('active');
-        }
+  if (canAccessMenu(currentUser, sectionId)) {
+    const target = document.getElementById(`section-${sectionId}`);
+    if (target) target.classList.add('active');
 
-        // 更新頁面標題
-        const menuItem = allowedMenus.find(item => item.id === sectionId);
-        if (menuItem) {
-            document.getElementById('currentPageTitle').textContent = menuItem.label;
-        }
+    const items = getMenuItems(currentUser.role);
+    const menuItem = items.find(i => i.id === sectionId);
+    if (menuItem) document.getElementById('currentPageTitle').textContent = menuItem.label;
 
-        // 載入該 section 的資料
-        loadSectionData(sectionId, user);
-    } else {
-        // 無權限存取
-        document.getElementById('section-unauthorized').classList.add('active');
-        document.getElementById('currentPageTitle').textContent = '權限不足';
-    }
+    loadSectionData(sectionId);
+  } else {
+    document.getElementById('section-unauthorized').classList.add('active');
+    document.getElementById('currentPageTitle').textContent = '權限不足';
+  }
 
-    // 更新 Sidebar Active 狀態
-    document.querySelectorAll('.menu-item').forEach(el => {
-        if (el.getAttribute('data-target') === sectionId) {
-            el.classList.add('active');
-        } else {
-            el.classList.remove('active');
-        }
-    });
+  // Sidebar active
+  document.querySelectorAll('.menu-item').forEach(el => {
+    el.classList.toggle('active', el.getAttribute('data-target') === sectionId);
+  });
 }
 
-function loadSectionData(sectionId, user) {
-    if (sectionId === 'orders') {
-        renderOrdersTable();
-    } else if (sectionId === 'customers') {
-        renderCustomersTable();
-    } else if (sectionId === 'users' && user.role === 'admin') {
-        renderUsersTable();
-    }
+function loadSectionData(sectionId) {
+  switch (sectionId) {
+    case 'orders':    renderOrdersTable();    break;
+    case 'customers': renderCustomersTable(); break;
+    case 'users':     if (isAdmin(currentUser)) renderUsersTable();     break;
+    case 'auditlogs': if (isAdmin(currentUser)) renderAuditLogsTable(); break;
+  }
 }
 
-function formatDate(isoString) {
-    if (!isoString) return '-';
-    const date = new Date(isoString);
-    return date.toLocaleString('zh-TW', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit'
-    });
-}
-
-/* =========================================
-   Customers Management Logic
-========================================= */
-
-function getCustomers() {
-    return JSON.parse(localStorage.getItem('customers') || '[]');
-}
-
-function saveCustomers(customers) {
-    localStorage.setItem('customers', JSON.stringify(customers));
-}
-
-function renderCustomersTable() {
-    const user = JSON.parse(localStorage.getItem('currentUser'));
-    const tbody = document.getElementById('customersTableBody');
-    if (!tbody) return;
-    
-    let customers = getCustomers();
-    const usersList = JSON.parse(localStorage.getItem('users') || '[]');
-
-    // Data-level 過濾：sales 只能看見自己的客戶
-    if (user.role === 'sales') {
-        customers = customers.filter(c => c.ownerId === user.employeeId);
-    }
-
-    tbody.innerHTML = customers.map(customer => {
-        // 狀態 Badge 顏色
-        const badgeClass = customer.status === 'active' ? 'badge-success' : 'badge-secondary';
-        
-        // 負責人查表
-        const ownerUser = usersList.find(u => u.employeeId === customer.ownerId);
-        const ownerName = ownerUser ? ownerUser.name : customer.ownerId;
-
-        // 動作按鈕邏輯
-        let actionsHtml = '';
-        if (user.role !== 'viewer' && customer.status !== 'inactive') {
-            // Edit: admin 可編輯所有，sales 可編輯自己的
-            if (user.role === 'admin' || (user.role === 'sales' && customer.ownerId === user.employeeId)) {
-                actionsHtml += `<button class="btn-secondary" onclick="openCustomerModal('${customer.customerId}')">編輯</button>`;
-            }
-            // Void: 只有 admin 可作廢
-            if (user.role === 'admin') {
-                actionsHtml += `<button class="btn-danger" onclick="voidCustomer('${customer.customerId}')">作廢</button>`;
-            }
-        }
-
-        return `
-            <tr>
-                <td><strong>${customer.customerId}</strong></td>
-                <td>${customer.name}</td>
-                <td>${customer.email}</td>
-                <td><span class="badge badge-viewer">${ownerName}</span></td>
-                <td><span class="badge ${badgeClass}">${customer.status}</span></td>
-                <td><small style="color:#6B7280">${formatDate(customer.createdAt)}</small></td>
-                <td><small style="color:#6B7280">${formatDate(customer.updatedAt)}</small></td>
-                <td class="actions-cell">${actionsHtml}</td>
-            </tr>
-        `;
-    }).join('');
-}
-
-// 開啟 Customer Modal (新增/編輯)
-window.openCustomerModal = function(customerId = null) {
-    const user = JSON.parse(localStorage.getItem('currentUser'));
-    const modal = document.getElementById('customerModal');
-    const title = document.getElementById('customerModalTitle');
-    const idInput = document.getElementById('customerId');
-    const nameInput = document.getElementById('customerName');
-    const emailInput = document.getElementById('customerEmail');
-
-    // 權限檢查
-    if (user.role === 'viewer') {
-        alert("無權限操作");
-        return;
-    }
-
-    if (customerId) {
-        // 編輯模式
-        const customers = getCustomers();
-        const customer = customers.find(c => c.customerId === customerId);
-        if (!customer) return;
-
-        // Data-level 權限防護：sales 只能編輯自己的客戶
-        if (user.role === 'sales' && customer.ownerId !== user.employeeId) {
-            alert("您只能編輯自己的客戶");
-            return;
-        }
-
-        title.textContent = '編輯客戶';
-        idInput.value = customer.customerId;
-        nameInput.value = customer.name;
-        emailInput.value = customer.email;
-    } else {
-        // 新增模式
-        title.textContent = '新增客戶';
-        idInput.value = '';
-        nameInput.value = '';
-        emailInput.value = '';
-    }
-
-    modal.classList.add('active');
-}
-
-// 關閉 Customer Modal
-window.closeCustomerModal = function() {
-    document.getElementById('customerModal').classList.remove('active');
-}
-
-// 儲存客戶
-window.saveCustomer = function() {
-    const user = JSON.parse(localStorage.getItem('currentUser'));
-    
-    // 權限防護
-    if (user.role === 'viewer') {
-        alert("無權限操作");
-        return;
-    }
-
-    const id = document.getElementById('customerId').value;
-    const name = document.getElementById('customerName').value.trim();
-    const email = document.getElementById('customerEmail').value.trim();
-
-    if (!name || !email) {
-        alert('請填寫完整資訊');
-        return;
-    }
-
-    let customers = getCustomers();
-    const now = new Date().toISOString();
-
-    if (id) {
-        // 編輯客戶
-        const index = customers.findIndex(c => c.customerId === id);
-        if (index === -1) return;
-
-        // Data-level 二次防護
-        if (user.role === 'sales' && customers[index].ownerId !== user.employeeId) {
-            alert("無權限修改此客戶");
-            return;
-        }
-
-        customers[index].name = name;
-        customers[index].email = email;
-        customers[index].updatedAt = now;
-    } else {
-        // 新增客戶
-        const newId = 'C' + String(Date.now()).slice(-4);
-        customers.push({
-            customerId: newId,
-            name: name,
-            email: email,
-            status: "active",
-            ownerId: user.employeeId, // 自動帶入登入者
-            createdAt: now,
-            updatedAt: null
-        });
-    }
-
-    saveCustomers(customers);
-    closeCustomerModal();
-    renderCustomersTable();
-}
-
-// 作廢客戶 (Soft Delete)
-window.voidCustomer = function(id) {
-    const user = JSON.parse(localStorage.getItem('currentUser'));
-    
-    // RBAC 防護：只有 admin 可以作廢
-    if (user.role !== 'admin') {
-        alert("無權限操作：僅管理員可作廢客戶");
-        return;
-    }
-
-    if (confirm('確定要作廢此客戶嗎？作廢後狀態將轉為 inactive。')) {
-        let customers = getCustomers();
-        const customer = customers.find(c => c.customerId === id);
-        if (customer) {
-            customer.status = 'inactive';
-            customer.updatedAt = new Date().toISOString();
-            saveCustomers(customers);
-            renderCustomersTable();
-        }
-    }
-}
-
-/* =========================================
-   Orders Management Logic
-========================================= */
-
-function getOrders() {
-    return JSON.parse(localStorage.getItem('orders') || '[]');
-}
-
-function saveOrders(orders) {
-    localStorage.setItem('orders', JSON.stringify(orders));
-}
+// ============================================================
+// Orders
+// ============================================================
 
 function renderOrdersTable() {
-    const user = JSON.parse(localStorage.getItem('currentUser'));
-    const tbody = document.getElementById('ordersTableBody');
-    if (!tbody) return;
-    
-    let orders = getOrders();
-    const usersList = JSON.parse(localStorage.getItem('users') || '[]');
+  const tbody = document.getElementById('ordersTableBody');
+  if (!tbody) return;
 
-    // Data-level 過濾：sales 只能看見自己的訂單
-    if (user.role === 'sales') {
-        orders = orders.filter(o => o.ownerId === user.employeeId);
+  const orders = getVisibleOrders(currentUser);
+  const usersList = getUsers();
+
+  tbody.innerHTML = orders.map(order => {
+    let badgeClass = 'badge-secondary';
+    if (order.status === '處理中') badgeClass = 'badge-info';
+    if (order.status === '已完成') badgeClass = 'badge-success';
+
+    const product = defaultProducts.find(p => p.productId === order.productId);
+    const productName = product ? product.name : '-';
+    const ownerUser = usersList.find(u => u.employeeId === order.ownerId);
+    const ownerName = ownerUser ? ownerUser.name : order.ownerId;
+
+    let actionsHtml = '';
+    if (order.status !== '已作廢') {
+      if (canEditOrder(currentUser, order)) {
+        actionsHtml += `<button class="btn-secondary btn-edit-order" data-id="${order.id}">編輯</button>`;
+      }
+      if (canVoidOrder(currentUser)) {
+        actionsHtml += `<button class="btn-danger btn-void-order" data-id="${order.id}">作廢</button>`;
+      }
     }
 
-    tbody.innerHTML = orders.map(order => {
-        // 狀態 Badge 顏色
-        let badgeClass = 'badge-secondary'; // 預設: 已作廢
-        if (order.status === '處理中') badgeClass = 'badge-info';
-        if (order.status === '已完成') badgeClass = 'badge-success';
-        
-        // 查表邏輯
-        const product = defaultProducts.find(p => p.productId === order.productId);
-        const productName = product ? product.name : '-';
-        
-        const ownerUser = usersList.find(u => u.employeeId === order.ownerId);
-        const ownerName = ownerUser ? ownerUser.name : order.ownerId;
+    return `
+      <tr>
+        <td><strong>${order.id}</strong></td>
+        <td>${order.customer}</td>
+        <td>${productName}</td>
+        <td>$${Number(order.amount).toLocaleString()}</td>
+        <td><span class="badge ${badgeClass}">${order.status}</span></td>
+        <td><span class="badge badge-viewer">${ownerName}</span></td>
+        <td class="actions-cell">${actionsHtml}</td>
+      </tr>
+    `;
+  }).join('');
 
-        // 動作按鈕邏輯
-        let actionsHtml = '';
-        if (user.role !== 'viewer' && order.status !== '已作廢') {
-            // Edit: admin 可編輯所有，sales 可編輯自己的
-            if (user.role === 'admin' || (user.role === 'sales' && order.ownerId === user.employeeId)) {
-                actionsHtml += `<button class="btn-secondary" onclick="openOrderModal('${order.id}')">編輯</button>`;
-            }
-            // Void: 只有 admin 可作廢
-            if (user.role === 'admin') {
-                actionsHtml += `<button class="btn-danger" onclick="voidOrder('${order.id}')">作廢</button>`;
-            }
-        }
-
-        return `
-            <tr>
-                <td><strong>${order.id}</strong></td>
-                <td>${order.customer}</td>
-                <td>${productName}</td>
-                <td>$${Number(order.amount).toLocaleString()}</td>
-                <td><span class="badge ${badgeClass}">${order.status}</span></td>
-                <td><span class="badge badge-viewer">${ownerName}</span></td>
-                <td class="actions-cell">${actionsHtml}</td>
-            </tr>
-        `;
-    }).join('');
+  // 動態事件綁定
+  tbody.querySelectorAll('.btn-edit-order').forEach(btn => {
+    btn.addEventListener('click', () => openOrderModal(btn.dataset.id));
+  });
+  tbody.querySelectorAll('.btn-void-order').forEach(btn => {
+    btn.addEventListener('click', () => voidOrder(btn.dataset.id));
+  });
 }
 
-// 處理商品選擇變更，自動帶入金額
-window.handleProductChange = function() {
-    const productId = document.getElementById('orderProduct').value;
-    const product = defaultProducts.find(p => p.productId === productId);
-    if (product) {
-        document.getElementById('orderAmount').value = product.price;
-    }
+function openOrderModal(orderId = null) {
+  if (!canCreateOrder(currentUser)) { alert('無權限操作'); return; }
+
+  const modal          = document.getElementById('orderModal');
+  const title          = document.getElementById('modalTitle');
+  const idInput        = document.getElementById('orderId');
+  const customerInput  = document.getElementById('orderCustomer');
+  const productSelect  = document.getElementById('orderProduct');
+  const amountInput    = document.getElementById('orderAmount');
+
+  // 填充商品選單
+  productSelect.innerHTML = '<option value="">請選擇商品</option>' +
+    defaultProducts.map(p => `<option value="${p.productId}">${p.name} - $${p.price}</option>`).join('');
+
+  if (orderId) {
+    const orders = getOrders();
+    const order  = orders.find(o => o.id === orderId);
+    if (!order) return;
+    if (!canEditOrder(currentUser, order)) { alert('無權限編輯此訂單'); return; }
+
+    title.textContent        = '編輯訂單';
+    idInput.value            = order.id;
+    customerInput.value      = order.customer;
+    productSelect.value      = order.productId;
+    amountInput.value        = order.amount;
+  } else {
+    title.textContent   = '新增訂單';
+    idInput.value       = '';
+    customerInput.value = '';
+    productSelect.value = '';
+    amountInput.value   = '';
+  }
+
+  modal.classList.add('active');
 }
 
-// 開啟 Order Modal (新增/編輯)
-window.openOrderModal = function(orderId = null) {
-    const user = JSON.parse(localStorage.getItem('currentUser'));
-    const modal = document.getElementById('orderModal');
-    const title = document.getElementById('modalTitle');
-    const idInput = document.getElementById('orderId');
-    const customerInput = document.getElementById('orderCustomer');
-    const productSelect = document.getElementById('orderProduct');
-    const amountInput = document.getElementById('orderAmount');
-
-    // 權限檢查：只有 admin, sales 可開啟
-    if (user.role === 'viewer') {
-        alert("無權限操作");
-        return;
-    }
-    
-    // 填充商品選單
-    productSelect.innerHTML = '<option value="">請選擇商品</option>' + defaultProducts.map(p => 
-        `<option value="${p.productId}">${p.name} - $${p.price}</option>`
-    ).join('');
-
-    if (orderId) {
-        // 編輯模式
-        const orders = getOrders();
-        const order = orders.find(o => o.id === orderId);
-        if (!order) return;
-
-        // Data-level 權限防護：sales 只能編輯自己的訂單
-        if (user.role === 'sales' && order.ownerId !== user.employeeId) {
-            alert("您只能編輯自己的訂單");
-            return;
-        }
-
-        title.textContent = '編輯訂單';
-        idInput.value = order.id;
-        customerInput.value = order.customer;
-        productSelect.value = order.productId;
-        amountInput.value = order.amount;
-    } else {
-        // 新增模式
-        title.textContent = '新增訂單';
-        idInput.value = '';
-        customerInput.value = '';
-        productSelect.value = '';
-        amountInput.value = '';
-    }
-
-    modal.classList.add('active');
+function closeOrderModal() {
+  document.getElementById('orderModal').classList.remove('active');
 }
 
-// 關閉 Modal
-window.closeOrderModal = function() {
-    document.getElementById('orderModal').classList.remove('active');
+function handleProductChange() {
+  const productId = document.getElementById('orderProduct').value;
+  const product = defaultProducts.find(p => p.productId === productId);
+  if (product) document.getElementById('orderAmount').value = product.price;
 }
 
-// 儲存訂單
-window.saveOrder = function() {
-    const user = JSON.parse(localStorage.getItem('currentUser'));
-    
-    // 權限防護
-    if (user.role === 'viewer') {
-        alert("無權限操作");
-        return;
-    }
+function saveOrder() {
+  if (!canCreateOrder(currentUser)) { alert('無權限操作'); return; }
 
-    const id = document.getElementById('orderId').value;
-    const customer = document.getElementById('orderCustomer').value.trim();
-    const productId = document.getElementById('orderProduct').value;
-    const amount = document.getElementById('orderAmount').value;
+  const id        = document.getElementById('orderId').value;
+  const customer  = document.getElementById('orderCustomer').value.trim();
+  const productId = document.getElementById('orderProduct').value;
+  const amount    = document.getElementById('orderAmount').value;
 
-    if (!customer || !productId || !amount) {
-        alert('請填寫完整資訊');
-        return;
-    }
+  if (!customer || !productId || !amount) { alert('請填寫完整資訊'); return; }
 
-    let orders = getOrders();
-    const now = new Date().toISOString();
+  const allOrders = getOrders();
+  const now = new Date().toISOString();
 
-    if (id) {
-        // 編輯訂單
-        const index = orders.findIndex(o => o.id === id);
-        if (index === -1) return;
+  if (id) {
+    // 編輯
+    const order = allOrders.find(o => o.id === id);
+    if (!order) return;
+    if (!canEditOrder(currentUser, order)) { alert('無權限修改此訂單'); return; }
 
-        // Data-level 二次防護
-        if (user.role === 'sales' && orders[index].ownerId !== user.employeeId) {
-            alert("無權限修改此訂單");
-            return;
-        }
+    order.customer  = customer;
+    order.productId = productId;
+    order.amount    = Number(amount);
+    order.updatedAt = now;
 
-        orders[index].customer = customer;
-        orders[index].productId = productId;
-        orders[index].amount = Number(amount);
-        orders[index].updatedAt = now;
-    } else {
-        // 新增訂單
-        const newId = 'ORD-' + Date.now().toString().slice(-4);
-        orders.push({
-            id: newId,
-            customer: customer,
-            productId: productId,
-            amount: Number(amount),
-            status: "處理中",
-            ownerId: user.employeeId, // 自動帶入登入者
-            createdAt: now,
-            updatedAt: now
-        });
-    }
+    saveOrders(allOrders);
+    addLog('UPDATE_ORDER', id, currentUser);
+  } else {
+    // 新增
+    const newId = 'ORD-' + Date.now().toString().slice(-4);
+    allOrders.push({
+      id: newId, customer, productId,
+      amount: Number(amount), status: '處理中',
+      ownerId: currentUser.employeeId,
+      createdAt: now, updatedAt: now
+    });
 
-    saveOrders(orders);
-    closeOrderModal();
-    renderOrdersTable();
+    saveOrders(allOrders);
+    addLog('CREATE_ORDER', newId, currentUser);
+  }
+
+  closeOrderModal();
+  renderOrdersTable();
 }
 
-// 作廢訂單 (Soft Delete)
-window.voidOrder = function(id) {
-    const user = JSON.parse(localStorage.getItem('currentUser'));
-    
-    // RBAC 防護：只有 admin 可以作廢
-    if (user.role !== 'admin') {
-        alert("無權限操作：僅管理員可作廢訂單");
-        return;
-    }
+function voidOrder(id) {
+  if (!canVoidOrder(currentUser)) { alert('無權限操作：僅管理員可作廢訂單'); return; }
+  if (!confirm('確定要作廢此訂單嗎？作廢後將無法修改。')) return;
 
-    if (confirm('確定要作廢此訂單嗎？作廢後將無法修改。')) {
-        let orders = getOrders();
-        const order = orders.find(o => o.id === id);
-        if (order) {
-            order.status = '已作廢';
-            order.updatedAt = new Date().toISOString();
-            saveOrders(orders);
-            renderOrdersTable();
-        }
-    }
+  const allOrders = getOrders();
+  const order = allOrders.find(o => o.id === id);
+  if (!order) return;
+
+  order.status    = '已作廢';
+  order.updatedAt = new Date().toISOString();
+
+  saveOrders(allOrders);
+  addLog('VOID_ORDER', id, currentUser);
+  renderOrdersTable();
 }
 
-/* =========================================
-   Users Management Logic
-========================================= */
+// ============================================================
+// Customers
+// ============================================================
+
+function renderCustomersTable() {
+  const tbody = document.getElementById('customersTableBody');
+  if (!tbody) return;
+
+  const customers = getVisibleCustomers(currentUser);
+  const usersList = getUsers();
+
+  tbody.innerHTML = customers.map(customer => {
+    const badgeClass = customer.status === 'active' ? 'badge-success' : 'badge-secondary';
+    const ownerUser  = usersList.find(u => u.employeeId === customer.ownerId);
+    const ownerName  = ownerUser ? ownerUser.name : customer.ownerId;
+
+    let actionsHtml = '';
+    if (customer.status !== 'inactive') {
+      if (canEditCustomer(currentUser, customer)) {
+        actionsHtml += `<button class="btn-secondary btn-edit-customer" data-id="${customer.customerId}">編輯</button>`;
+      }
+      if (canVoidCustomer(currentUser)) {
+        actionsHtml += `<button class="btn-danger btn-void-customer" data-id="${customer.customerId}">作廢</button>`;
+      }
+    }
+
+    return `
+      <tr>
+        <td><strong>${customer.customerId}</strong></td>
+        <td>${customer.name}</td>
+        <td>${customer.email}</td>
+        <td><span class="badge badge-viewer">${ownerName}</span></td>
+        <td><span class="badge ${badgeClass}">${customer.status}</span></td>
+        <td><small style="color:#6B7280">${formatDate(customer.createdAt)}</small></td>
+        <td><small style="color:#6B7280">${formatDate(customer.updatedAt)}</small></td>
+        <td class="actions-cell">${actionsHtml}</td>
+      </tr>
+    `;
+  }).join('');
+
+  tbody.querySelectorAll('.btn-edit-customer').forEach(btn => {
+    btn.addEventListener('click', () => openCustomerModal(btn.dataset.id));
+  });
+  tbody.querySelectorAll('.btn-void-customer').forEach(btn => {
+    btn.addEventListener('click', () => voidCustomer(btn.dataset.id));
+  });
+}
+
+function openCustomerModal(customerId = null) {
+  if (!canCreateCustomer(currentUser)) { alert('無權限操作'); return; }
+
+  const modal      = document.getElementById('customerModal');
+  const title      = document.getElementById('customerModalTitle');
+  const idInput    = document.getElementById('customerId');
+  const nameInput  = document.getElementById('customerName');
+  const emailInput = document.getElementById('customerEmail');
+
+  if (customerId) {
+    const customers = getCustomers();
+    const customer  = customers.find(c => c.customerId === customerId);
+    if (!customer) return;
+    if (!canEditCustomer(currentUser, customer)) { alert('您只能編輯自己的客戶'); return; }
+
+    title.textContent  = '編輯客戶';
+    idInput.value      = customer.customerId;
+    nameInput.value    = customer.name;
+    emailInput.value   = customer.email;
+  } else {
+    title.textContent = '新增客戶';
+    idInput.value     = '';
+    nameInput.value   = '';
+    emailInput.value  = '';
+  }
+
+  modal.classList.add('active');
+}
+
+function closeCustomerModal() {
+  document.getElementById('customerModal').classList.remove('active');
+}
+
+function saveCustomer() {
+  if (!canCreateCustomer(currentUser)) { alert('無權限操作'); return; }
+
+  const id    = document.getElementById('customerId').value;
+  const name  = document.getElementById('customerName').value.trim();
+  const email = document.getElementById('customerEmail').value.trim();
+
+  if (!name || !email) { alert('請填寫完整資訊'); return; }
+
+  const allCustomers = getCustomers();
+  const now = new Date().toISOString();
+
+  if (id) {
+    const customer = allCustomers.find(c => c.customerId === id);
+    if (!customer) return;
+    if (!canEditCustomer(currentUser, customer)) { alert('無權限修改此客戶'); return; }
+
+    customer.name      = name;
+    customer.email     = email;
+    customer.updatedAt = now;
+
+    saveCustomers(allCustomers);
+    addLog('UPDATE_CUSTOMER', id, currentUser);
+  } else {
+    const newId = 'C' + String(Date.now()).slice(-4);
+    allCustomers.push({
+      customerId: newId, name, email,
+      status: 'active',
+      ownerId: currentUser.employeeId,
+      createdAt: now, updatedAt: null
+    });
+
+    saveCustomers(allCustomers);
+    addLog('CREATE_CUSTOMER', newId, currentUser);
+  }
+
+  closeCustomerModal();
+  renderCustomersTable();
+}
+
+function voidCustomer(id) {
+  if (!canVoidCustomer(currentUser)) { alert('無權限操作：僅管理員可作廢客戶'); return; }
+  if (!confirm('確定要作廢此客戶嗎？作廢後狀態將轉為 inactive。')) return;
+
+  const allCustomers = getCustomers();
+  const customer = allCustomers.find(c => c.customerId === id);
+  if (!customer) return;
+
+  customer.status    = 'inactive';
+  customer.updatedAt = new Date().toISOString();
+
+  saveCustomers(allCustomers);
+  addLog('DEACTIVATE_CUSTOMER', id, currentUser);
+  renderCustomersTable();
+}
+
+// ============================================================
+// Users Management (Admin Only)
+// ============================================================
 
 function renderUsersTable() {
-    const tbody = document.getElementById('usersTableBody');
-    if (!tbody) return;
-    
-    let users = [];
-    try {
-        const storedUsers = JSON.parse(localStorage.getItem('users'));
-        if (Array.isArray(storedUsers)) {
-            users = storedUsers;
-        }
-    } catch (e) {
-        console.error('Failed to parse users list', e);
+  if (!isAdmin(currentUser)) return;
+
+  const tbody = document.getElementById('usersTableBody');
+  if (!tbody) return;
+
+  const users = getUsers();
+
+  tbody.innerHTML = users.map(u => {
+    const displayRole = u.role.charAt(0).toUpperCase() + u.role.slice(1);
+    const status = u.status || 'active';
+    const badgeClass = status === 'active' ? 'badge-success' : 'badge-secondary';
+
+    let roleBadgeClass = 'badge-viewer';
+    if (u.role === 'admin') roleBadgeClass = 'badge-admin';
+    else if (u.role === 'sales') roleBadgeClass = 'badge-sales';
+
+    let actionsHtml = '';
+    if (status !== 'inactive') {
+      if (canEditUser(currentUser)) {
+        actionsHtml += `<button class="btn-secondary btn-edit-user" data-id="${u.employeeId}">編輯</button>`;
+      }
+      if (canDeactivateUser(currentUser, u)) {
+        actionsHtml += `<button class="btn-danger btn-void-user" data-id="${u.employeeId}">停用</button>`;
+      }
     }
 
-    if (users.length === 0) {
-        users = [
-            { employeeId: 'admin1', name: '系統管理員', role: 'admin' },
-            { employeeId: 'sales1', name: '業務專員', role: 'sales' },
-            { employeeId: 'viewer1', name: '檢視人員', role: 'viewer' }
-        ];
-    }
+    return `
+      <tr>
+        <td><strong>${u.employeeId}</strong></td>
+        <td>${u.name || '-'}</td>
+        <td>${u.email || '-'}</td>
+        <td><span class="badge ${roleBadgeClass}">${displayRole}</span></td>
+        <td><span class="badge ${badgeClass}">${status}</span></td>
+        <td class="actions-cell">${actionsHtml}</td>
+      </tr>
+    `;
+  }).join('');
 
-    // 修改: 同時顯示 employeeId 與 email
-    tbody.innerHTML = users.map(u => {
-        const displayRole = u.role.charAt(0).toUpperCase() + u.role.slice(1);
-        return `
-            <tr>
-                <td><strong>${u.employeeId}</strong><br><small style="color:#6B7280">${u.email || ''}</small></td>
-                <td>${u.name || '-'}</td>
-                <td><span class="badge badge-${u.role}">${displayRole}</span></td>
-                <td>-</td>
-            </tr>
-        `;
-    }).join('');
+  tbody.querySelectorAll('.btn-edit-user').forEach(btn => {
+    btn.addEventListener('click', () => openUserModal(btn.dataset.id));
+  });
+  tbody.querySelectorAll('.btn-void-user').forEach(btn => {
+    btn.addEventListener('click', () => deactivateUser(btn.dataset.id));
+  });
 }
 
-function bindEvents() {
-    // 登出按鈕
-    const logoutBtn = document.getElementById('logoutBtn');
-    if (logoutBtn) {
-        logoutBtn.addEventListener('click', () => {
-            localStorage.removeItem('currentUser');
-            window.location.href = 'index.html';
-        });
+function openUserModal(employeeId = null) {
+  if (!canEditUser(currentUser)) { alert('無權限'); return; }
+
+  const modal      = document.getElementById('userModal');
+  const title      = document.getElementById('userModalTitle');
+  const idInput    = document.getElementById('userEmployeeId');
+  const nameInput  = document.getElementById('userName');
+  const emailInput = document.getElementById('userEmail');
+  const roleSelect = document.getElementById('userRole');
+
+  const users = getUsers();
+
+  if (employeeId) {
+    // 編輯模式
+    const u = users.find(x => x.employeeId === employeeId);
+    if (!u) return;
+
+    title.textContent     = '編輯使用者';
+    idInput.value         = u.employeeId;
+    idInput.dataset.mode  = 'edit';
+    nameInput.value       = u.name;
+    emailInput.value      = u.email;
+    roleSelect.value      = u.role;
+  } else {
+    // 新增模式
+    const newEmployeeId = generateEmployeeId(users);
+
+    title.textContent     = '新增使用者';
+    idInput.value         = newEmployeeId;
+    idInput.dataset.mode  = 'create';
+    nameInput.value       = '';
+    emailInput.value      = `${newEmployeeId}@test.com`;
+    roleSelect.value      = 'viewer';
+  }
+
+  modal.classList.add('active');
+}
+
+function closeUserModal() {
+  document.getElementById('userModal').classList.remove('active');
+}
+
+function saveUser() {
+  if (!canEditUser(currentUser)) { alert('無權限操作'); return; }
+
+  const idInput    = document.getElementById('userEmployeeId');
+  const employeeId = idInput.value.trim();
+  const name       = document.getElementById('userName').value.trim();
+  const email      = document.getElementById('userEmail').value.trim();
+  const role       = document.getElementById('userRole').value;
+  const isEdit     = idInput.dataset.mode === 'edit';
+
+  if (!employeeId || !name || !email) { alert('請填寫必填資訊'); return; }
+
+  const users = getUsers();
+
+  if (isEdit) {
+    const index = users.findIndex(u => u.employeeId === employeeId);
+    if (index > -1) {
+      // 角色變更保護：不可改自己角色 + 最後 admin 保護
+      const roleCheck = canChangeRole(users, currentUser, users[index], role);
+      if (!roleCheck.allowed) {
+        alert(roleCheck.reason);
+        return;
+      }
+
+      users[index].name = name;
+      users[index].email = email;
+      users[index].role = role;
+      saveUsers(users);
+      addLog('UPDATE_USER', employeeId, currentUser);
     }
+  } else {
+    if (users.some(u => u.employeeId === employeeId)) {
+      alert('員工編號已存在');
+      return;
+    }
+    users.push({
+      employeeId, name, email,
+      password: 'test123',
+      role, status: 'active',
+      mustChangePassword: true
+    });
+    saveUsers(users);
+    addLog('CREATE_USER', employeeId, currentUser);
+  }
+
+  closeUserModal();
+  renderUsersTable();
+}
+
+function deactivateUser(targetEmployeeId) {
+  const users  = getUsers();
+  const target = users.find(u => u.employeeId === targetEmployeeId);
+  if (!target) return;
+
+  if (!canDeactivateUser(currentUser, target)) {
+    alert('無法停用此使用者');
+    return;
+  }
+
+  // 最後 admin 保護
+  if (target.role === 'admin' && !validateLastAdmin(users)) {
+    alert('系統至少需保留一位管理員');
+    return;
+  }
+
+  if (!confirm('確定要停用此使用者嗎？')) return;
+
+  target.status = 'inactive';
+  saveUsers(users);
+  addLog('DEACTIVATE_USER', targetEmployeeId, currentUser);
+  renderUsersTable();
+}
+
+// ============================================================
+// Audit Logs (Admin Only)
+// ============================================================
+
+function renderAuditLogsTable() {
+  if (!isAdmin(currentUser)) return;
+
+  const tbody = document.getElementById('auditLogsTableBody');
+  if (!tbody) return;
+
+  const logs      = getLogs();
+  const usersList = getUsers();
+
+  // 依時間降冪排序
+  logs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+  tbody.innerHTML = logs.map(log => {
+    const logUser     = usersList.find(u => u.employeeId === log.userId);
+    const logUserName = logUser ? logUser.name : log.userId;
+
+    return `
+      <tr>
+        <td><small style="color:#6B7280">${log.id}</small></td>
+        <td><strong>${log.action}</strong></td>
+        <td><span class="badge badge-viewer">${logUserName}</span></td>
+        <td>${log.target}</td>
+        <td><small style="color:#6B7280">${formatDate(log.timestamp)}</small></td>
+      </tr>
+    `;
+  }).join('');
+}
+
+// ============================================================
+// 事件綁定（全域）
+// ============================================================
+
+function bindEvents() {
+  // 登出
+  document.getElementById('logoutBtn')?.addEventListener('click', () => {
+    clearCurrentUser();
+    window.location.href = 'index.html';
+  });
+
+  // Order Modal 按鈕
+  document.getElementById('addOrderBtn')?.addEventListener('click', () => openOrderModal());
+  document.querySelector('#orderModal .btn-close')?.addEventListener('click', closeOrderModal);
+  document.querySelector('#orderModal .btn-secondary')?.addEventListener('click', closeOrderModal);
+  document.querySelector('#orderModal .btn-primary')?.addEventListener('click', saveOrder);
+  document.getElementById('orderProduct')?.addEventListener('change', handleProductChange);
+
+  // Customer Modal 按鈕
+  document.getElementById('addCustomerBtn')?.addEventListener('click', () => openCustomerModal());
+  document.querySelector('#customerModal .btn-close')?.addEventListener('click', closeCustomerModal);
+  document.querySelector('#customerModal .btn-secondary')?.addEventListener('click', closeCustomerModal);
+  document.querySelector('#customerModal .btn-primary')?.addEventListener('click', saveCustomer);
+
+  // User Modal 按鈕
+  document.getElementById('addUserBtn')?.addEventListener('click', () => openUserModal());
+  document.querySelector('#userModal .btn-close')?.addEventListener('click', closeUserModal);
+  document.querySelector('#userModal .btn-secondary')?.addEventListener('click', closeUserModal);
+  document.querySelector('#userModal .btn-primary')?.addEventListener('click', saveUser);
 }

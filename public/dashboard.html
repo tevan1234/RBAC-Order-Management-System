@@ -73,7 +73,7 @@
                 <section id="section-orders" class="section-content">
                     <div class="section-header">
                         <h2>訂單管理</h2>
-                        <button class="btn-primary" id="addOrderBtn" style="display: none;" onclick="openOrderModal()">+ 新增訂單</button>
+                        <button class="btn-primary" id="addOrderBtn" style="display: none;">+ 新增訂單</button>
                     </div>
                     <div class="table-container">
                         <table class="data-table">
@@ -99,7 +99,7 @@
                 <section id="section-customers" class="section-content">
                     <div class="section-header">
                         <h2>客戶管理</h2>
-                        <button class="btn-primary" id="addCustomerBtn" style="display: none;" onclick="openCustomerModal()">+ 新增客戶</button>
+                        <button class="btn-primary" id="addCustomerBtn" style="display: none;">+ 新增客戶</button>
                     </div>
                     <div class="table-container">
                         <table class="data-table">
@@ -124,39 +124,49 @@
 
                 <!-- Users Section (Admin Only) -->
                 <section id="section-users" class="section-content">
+                    <div class="section-header">
+                        <h2>使用者管理 (User Management)</h2>
+                        <button class="btn-primary" id="addUserBtn">+ 新增使用者</button>
+                    </div>
                     <div class="table-container">
                         <table class="data-table">
                             <thead>
                                 <tr>
                                     <th>員工編號</th>
                                     <th>姓名</th>
+                                    <th>Email</th>
                                     <th>角色</th>
-                                    <th>最後登入</th>
+                                    <th>狀態</th>
+                                    <th>操作</th>
                                 </tr>
                             </thead>
                             <tbody id="usersTableBody">
-                                <!-- 假資料由 JS 填充 -->
+                                <!-- 由 JS 填充 -->
                             </tbody>
                         </table>
                     </div>
                 </section>
 
-                <!-- Permissions Section (Admin Only) -->
-                <section id="section-permissions" class="section-content">
-                    <div class="unauthorized-card" style="text-align: left;">
-                        <h2 style="margin-bottom: 20px;">角色權限說明</h2>
-                        <div class="form-group" style="background: #F9FAFB; padding: 20px; border-radius: 12px; margin-bottom: 16px;">
-                            <strong>👑 Admin (系統管理員)</strong>
-                            <p class="hint-text">擁有系統最高權限，可管理使用者、設定權限、查看完整統計資料與訂單。</p>
-                        </div>
-                        <div class="form-group" style="background: #F9FAFB; padding: 20px; border-radius: 12px; margin-bottom: 16px;">
-                            <strong>🧑💼 Sales (業務人員)</strong>
-                            <p class="hint-text">可管理訂單、查看個人與團隊銷售統計，無權進入系統管理頁面。</p>
-                        </div>
-                        <div class="form-group" style="background: #F9FAFB; padding: 20px; border-radius: 12px;">
-                            <strong>👀 Viewer (檢視者)</strong>
-                            <p class="hint-text">僅具備唯讀權限，可查看儀表板統計資訊，無法進行任何新增、修改或刪除操作。</p>
-                        </div>
+                <!-- Audit Logs Section (Admin Only) -->
+                <section id="section-auditlogs" class="section-content">
+                    <div class="section-header">
+                        <h2>操作紀錄 (Audit Log)</h2>
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead>
+                                <tr>
+                                    <th>Log ID</th>
+                                    <th>操作類型</th>
+                                    <th>操作人</th>
+                                    <th>目標</th>
+                                    <th>時間</th>
+                                </tr>
+                            </thead>
+                            <tbody id="auditLogsTableBody">
+                                <!-- 由 JS 填充 -->
+                            </tbody>
+                        </table>
                     </div>
                 </section>
 
@@ -178,7 +188,7 @@
         <div class="modal-card">
             <div class="modal-header">
                 <h3 id="modalTitle">新增訂單</h3>
-                <button class="btn-close" onclick="closeOrderModal()">&times;</button>
+                <button class="btn-close">&times;</button>
             </div>
             <div class="modal-body">
                 <form id="orderForm">
@@ -189,7 +199,7 @@
                     </div>
                     <div class="form-group">
                         <label for="orderProduct">商品</label>
-                        <select id="orderProduct" required onchange="handleProductChange()">
+                        <select id="orderProduct" required>
                             <!-- 由 JS 填充 -->
                         </select>
                     </div>
@@ -200,8 +210,8 @@
                 </form>
             </div>
             <div class="modal-footer">
-                <button class="btn-secondary" onclick="closeOrderModal()">取消</button>
-                <button class="btn-primary" onclick="saveOrder()">儲存</button>
+                <button class="btn-secondary">取消</button>
+                <button class="btn-primary">儲存</button>
             </div>
         </div>
     </div>
@@ -211,7 +221,7 @@
         <div class="modal-card">
             <div class="modal-header">
                 <h3 id="customerModalTitle">新增客戶</h3>
-                <button class="btn-close" onclick="closeCustomerModal()">&times;</button>
+                <button class="btn-close">&times;</button>
             </div>
             <div class="modal-body">
                 <form id="customerForm">
@@ -227,12 +237,48 @@
                 </form>
             </div>
             <div class="modal-footer">
-                <button class="btn-secondary" onclick="closeCustomerModal()">取消</button>
-                <button class="btn-primary" onclick="saveCustomer()">儲存</button>
+                <button class="btn-secondary">取消</button>
+                <button class="btn-primary">儲存</button>
             </div>
         </div>
     </div>
-
-    <script src="js/dashboard.js"></script>
+    <!-- User Modal -->
+    <div class="modal-overlay" id="userModal">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3 id="userModalTitle">新增使用者</h3>
+                <button class="btn-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="userForm">
+                    <div class="form-group">
+                        <label for="userEmployeeId">員工編號 (系統自動產生)</label>
+                        <input type="text" id="userEmployeeId" readonly style="background-color: #F3F4F6;">
+                    </div>
+                    <div class="form-group">
+                        <label for="userName">姓名</label>
+                        <input type="text" id="userName" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="userEmail">Email</label>
+                        <input type="email" id="userEmail" readonly style="background-color: #F3F4F6;">
+                    </div>
+                    <div class="form-group">
+                        <label for="userRole">角色</label>
+                        <select id="userRole" required>
+                            <option value="admin">Admin</option>
+                            <option value="sales">Sales</option>
+                            <option value="viewer">Viewer</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary">取消</button>
+                <button class="btn-primary">儲存</button>
+            </div>
+        </div>
+    </div>
+    <script type="module" src="js/dashboard.js"></script>
 </body>
 </html>

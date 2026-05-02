@@ -618,31 +618,61 @@ body {
     border-radius: 16px;
     box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
     border: 1px solid #F3F4F6;
-    overflow: hidden;
+    overflow-x: auto; /* 強制橫向捲軸 */
+    -webkit-overflow-scrolling: touch;
 }
+
 
 .data-table {
     width: 100%;
+    min-width: 900px; /* 確保表格有足夠寬度展開內容，防止換行 */
     border-collapse: collapse;
     text-align: left;
+    table-layout: auto;
+}
+
+
+.data-table th,
+.data-table td {
+    padding: 12px 16px;
+    font-size: 14px;
+    border-bottom: 1px solid #F3F4F6;
+    color: var(--text-main);
+    white-space: nowrap; /* 強制內容不換行 */
+    vertical-align: middle; /* 垂直居中 */
+}
+
+
+/* 針對內容較長且允許截斷的欄位 */
+.text-truncate {
+    max-width: 240px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .data-table th {
     background-color: #F9FAFB;
-    padding: 16px 24px;
     font-size: 13px;
     font-weight: 600;
     color: var(--text-muted);
     text-transform: uppercase;
-    border-bottom: 1px solid #F3F4F6;
 }
 
-.data-table td {
-    padding: 16px 24px;
-    font-size: 14px;
-    border-bottom: 1px solid #F3F4F6;
-    color: var(--text-main);
+/* 設定各欄位最小寬度，防止擠壓變形 */
+.data-table td:nth-child(1) { min-width: 110px; } /* ID / 序號 */
+.data-table td:nth-child(2) { min-width: 100px; } /* 姓名 / 客戶 */
+.data-table td:nth-child(4) { min-width: 100px; } /* 金額 / 角色 */
+.data-table td:nth-child(5) { min-width: 90px; }  /* 狀態 */
+
+/* 將特定欄位置中 */
+.data-table th:nth-child(4), .data-table td:nth-child(4),
+.data-table th:nth-child(5), .data-table td:nth-child(5),
+.data-table th:last-child, .data-table td:last-child {
+    text-align: center;
 }
+
+
 
 .data-table tr:last-child td {
     border-bottom: none;
@@ -786,7 +816,59 @@ body {
     .section-content.centered-flex {
         padding: 16px 0;
     }
+
+    /* 搜尋列與日期篩選 RWD 優化 */
+    .search-bar {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+        margin-bottom: 20px;
+    }
+
+    .custom-dropdown, .dropdown-trigger {
+        width: 100%;
+    }
+
+    .search-select, .search-input {
+        width: 100%;
+        max-width: none;
+    }
+
+    .search-bar.search-bar-date {
+        flex-direction: row;
+        flex-wrap: nowrap;
+        align-items: center;
+        margin-top: 0;
+        gap: 4px;
+    }
+
+    .date-label {
+        display: none;
+    }
+
+    .search-input-date {
+        flex: 1;
+        min-width: 0;
+        font-size: 13px;
+        padding: 8px 4px;
+    }
+
+    .date-separator {
+        display: inline-block;
+        padding: 0 2px;
+        font-size: 14px;
+        flex-shrink: 0;
+    }
+
+    .btn-reset-date {
+        width: auto;
+        margin-top: 0;
+        padding: 8px 10px;
+        text-align: center;
+        flex-shrink: 0;
+    }
 }
+
 
 /* --- Orders Section Styles --- */
 
@@ -871,6 +953,12 @@ body {
     border: 1px solid #E5E7EB;
 }
 
+.badge-void {
+    background-color: #FEE2E2;
+    color: #991B1B;
+    border: 1px solid #FECACA;
+}
+
 /* Section Header */
 .section-header {
     display: flex;
@@ -886,14 +974,39 @@ body {
 
 /* Actions Cell */
 .actions-cell {
+    /* 保持 td 為 table-cell 角色，不直接設為 flex */
+    text-align: center;
+}
+
+.actions-wrapper, .status-wrapper {
     display: flex;
-    gap: 8px;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    min-height: 46px;
+    white-space: nowrap;
+}
+
+.actions-wrapper {
+    min-width: 160px; /* 確保按鈕有足夠空間 */
+}
+
+
+
+
+.actions-cell span {
+    color: #9CA3AF;
+    font-weight: 500;
+    font-size: 14px;
+    line-height: 1;
 }
 
 .actions-cell button {
-    padding: 4px 8px;
+    margin: 0; /* 移除可能的預設邊距 */
+    padding: 6px 12px; /* 稍微增加按鈕內邊距使其看起來更自然 */
     font-size: 12px;
 }
+
 
 /* Modal Styles */
 .modal-overlay {

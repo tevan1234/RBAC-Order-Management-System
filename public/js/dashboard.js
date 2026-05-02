@@ -122,6 +122,37 @@ function dismissNotification(el) {
   });
 }
 
+// ── 自定義確認對話框 ──
+function showConfirm(message, title = '確認操作') {
+  return new Promise((resolve) => {
+    const modal = document.getElementById('confirmModal');
+    const msgEl = document.getElementById('confirmMessage');
+    const titleEl = document.getElementById('confirmTitle');
+    const okBtn = document.getElementById('confirmOkBtn');
+    const cancelBtn = document.getElementById('confirmCancelBtn');
+    const closeBtn = document.getElementById('closeConfirmBtn');
+
+    msgEl.textContent = message;
+    titleEl.textContent = title;
+    modal.classList.add('active');
+
+    const cleanup = (result) => {
+      modal.classList.remove('active');
+      okBtn.removeEventListener('click', onOk);
+      cancelBtn.removeEventListener('click', onCancel);
+      closeBtn.removeEventListener('click', onCancel);
+      resolve(result);
+    };
+
+    const onOk = () => cleanup(true);
+    const onCancel = () => cleanup(false);
+
+    okBtn.addEventListener('click', onOk);
+    cancelBtn.addEventListener('click', onCancel);
+    closeBtn.addEventListener('click', onCancel);
+  });
+}
+
 // ── 全域快取 ──
 let currentUser = null;
 
@@ -141,7 +172,7 @@ let userSearch = { field: 'employeeId', keyword: '' };
 // ── 目標三：Custom Dropdown 管理 ──
 function initDropdown(dropdownId, onChange) {
   const dropdown = document.getElementById(dropdownId);
-  if (!dropdown) return;
+  if (!dropdown || dropdown.dataset.initialized === 'true') return;
 
   const trigger = dropdown.querySelector('.dropdown-trigger');
   const menu = dropdown.querySelector('.dropdown-menu');
@@ -162,10 +193,17 @@ function initDropdown(dropdownId, onChange) {
       item.classList.add('active');
       labelEl.textContent = item.textContent;
       dropdown.dataset.value = item.dataset.value;
+      
+      // 同時更新隱藏的 input (如有)
+      const hiddenInput = dropdown.querySelector('input[type="hidden"]');
+      if (hiddenInput) hiddenInput.value = item.dataset.value;
+
       dropdown.classList.remove('open');
       if (onChange) onChange(item.dataset.value, item.textContent);
     });
   });
+
+  dropdown.dataset.initialized = 'true';
 }
 
 function getDropdownValue(dropdownId) {
@@ -462,10 +500,10 @@ function renderOrdersTable() {
     let actionsHtml = '';
     if (order.status !== '已作廢') {
       if (canEditOrder(currentUser, order)) {
-        actionsHtml += `<button class="btn-secondary" onclick="openOrderModal('${order.id}')">編輯</button>`;
+        actionsHtml += `<button class="btn-secondary btn-edit-order" data-id="${order.id}">編輯</button>`;
       }
       if (canVoidOrder(currentUser)) {
-        actionsHtml += `<button class="btn-danger" onclick="deleteOrder('${order.id}')">作廢</button>`;
+        actionsHtml += `<button class="btn-danger btn-void-order" data-id="${order.id}">作廢</button>`;
       }
     }
 
@@ -490,14 +528,24 @@ function renderOrdersTable() {
           </div>
         </td>
         <td>${order.customer}</td>
-        <td>${productName}</td>
+        <td class="text-truncate">${productName}</td>
         <td>$${Number(order.amount).toLocaleString()}</td>
-        <td><span class="badge ${statusClass}">${order.status}</span></td>
-        <td><span class="badge badge-viewer">${ownerName}</span></td>
-        <td class="actions-cell">${actionsHtml}</td>
+        <td><div class="status-wrapper"><span class="badge ${statusClass}">${order.status}</span></div></td>
+        <td class="badge-cell"><span class="badge badge-viewer">${ownerName}</span></td>
+        <td class="actions-cell"><div class="actions-wrapper">${actionsHtml || '<span>—</span>'}</div></td>
       </tr>
     `;
   }).join('');
+
+  // 動態綁定事件 (因為是 Module，onclick 會失效)
+  tbody.querySelectorAll('.btn-edit-order').forEach(btn => {
+    btn.addEventListener('click', () => openOrderModal(btn.dataset.id));
+  });
+  tbody.querySelectorAll('.btn-void-order').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await voidOrder(btn.dataset.id);
+    });
+  });
 
   updateOrderOverview(orders);
 
@@ -621,9 +669,11 @@ function saveOrder() {
   renderOrdersTable();
 }
 
-function voidOrder(id) {
+async function voidOrder(id) {
   if (!canVoidOrder(currentUser)) { showNotification('無權限操作：僅管理員可作廢訂單', 'error'); return; }
-  if (!confirm('確定要作廢此訂單嗎？作廢後將無法修改。')) return;
+  
+  const confirmed = await showConfirm('確定要作廢此訂單嗎？作廢後將無法修改。', '作廢訂單確認');
+  if (!confirmed) return;
 
   const allOrders = getOrders();
   const order = allOrders.find(o => o.id === id);
@@ -635,6 +685,7 @@ function voidOrder(id) {
   saveOrders(allOrders);
   addLog('VOID_ORDER', id, currentUser);
   renderOrdersTable();
+  showNotification('訂單已成功作廢', 'success');
 }
 
 // ============================================================
@@ -701,12 +752,12 @@ function renderCustomersTable() {
       <tr>
         <td><strong>${customer.customerId}</strong></td>
         <td>${customer.name}</td>
-        <td>${customer.email}</td>
+        <td class="text-truncate">${customer.email}</td>
         <td><span class="badge badge-viewer">${ownerName}</span></td>
-        <td><span class="badge ${badgeClass}">${customer.status}</span></td>
+        <td><div class="status-wrapper"><span class="badge ${badgeClass}">${customer.status}</span></div></td>
         <td><small style="color:#6B7280">${formatDate(customer.createdAt)}</small></td>
         <td><small style="color:#6B7280">${formatDate(customer.updatedAt)}</small></td>
-        ${showActions ? `<td class="actions-cell">${actionsHtml}</td>` : ''}
+        ${showActions ? `<td class="actions-cell"><div class="actions-wrapper">${actionsHtml || '<span>—</span>'}</div></td>` : ''}
       </tr>
     `;
   }).join('');
@@ -721,7 +772,9 @@ function renderCustomersTable() {
     btn.addEventListener('click', () => openCustomerModal(btn.dataset.id));
   });
   tbody.querySelectorAll('.btn-void-customer').forEach(btn => {
-    btn.addEventListener('click', () => voidCustomer(btn.dataset.id));
+    btn.addEventListener('click', async () => {
+      await voidCustomer(btn.dataset.id);
+    });
   });
 }
 
@@ -798,9 +851,11 @@ function saveCustomer() {
   renderCustomersTable();
 }
 
-function voidCustomer(id) {
+async function voidCustomer(id) {
   if (!canVoidCustomer(currentUser)) { showNotification('無權限操作：僅管理員可作廢客戶', 'error'); return; }
-  if (!confirm('確定要作廢此客戶嗎？作廢後狀態將轉為 inactive。')) return;
+  
+  const confirmed = await showConfirm('確定要作廢此客戶嗎？作廢後狀態將轉為 inactive。', '作廢客戶確認');
+  if (!confirmed) return;
 
   const allCustomers = getCustomers();
   const customer = allCustomers.find(c => c.customerId === id);
@@ -812,6 +867,7 @@ function voidCustomer(id) {
   saveCustomers(allCustomers);
   addLog('DEACTIVATE_CUSTOMER', id, currentUser);
   renderCustomersTable();
+  showNotification('客戶已成功停用/作廢', 'success');
 }
 
 // ============================================================
@@ -862,10 +918,10 @@ function renderUsersTable() {
       <tr>
         <td><strong>${u.employeeId}</strong></td>
         <td>${u.name || '-'}</td>
-        <td>${u.email || '-'}</td>
+        <td class="text-truncate">${u.email || '-'}</td>
         <td><span class="badge ${roleBadgeClass}">${displayRole}</span></td>
-        <td><span class="badge ${badgeClass}">${status}</span></td>
-        <td class="actions-cell">${actionsHtml}</td>
+        <td><div class="status-wrapper"><span class="badge ${badgeClass}">${status}</span></div></td>
+        <td class="actions-cell"><div class="actions-wrapper">${actionsHtml || '<span>—</span>'}</div></td>
       </tr>
     `;
   }).join('');
@@ -879,7 +935,9 @@ function renderUsersTable() {
     btn.addEventListener('click', () => openUserModal(btn.dataset.id));
   });
   tbody.querySelectorAll('.btn-void-user').forEach(btn => {
-    btn.addEventListener('click', () => deactivateUser(btn.dataset.id));
+    btn.addEventListener('click', async () => {
+      await deactivateUser(btn.dataset.id);
+    });
   });
 }
 
@@ -976,7 +1034,7 @@ function saveUser() {
   renderUsersTable();
 }
 
-function deactivateUser(targetEmployeeId) {
+async function deactivateUser(targetEmployeeId) {
   const users = getUsers();
   const target = users.find(u => u.employeeId === targetEmployeeId);
   if (!target) return;
@@ -992,12 +1050,14 @@ function deactivateUser(targetEmployeeId) {
     return;
   }
 
-  if (!confirm('確定要停用此使用者嗎？')) return;
+  const confirmed = await showConfirm('確定要停用此使用者嗎？', '停用使用者確認');
+  if (!confirmed) return;
 
   target.status = 'inactive';
   saveUsers(users);
   addLog('DEACTIVATE_USER', targetEmployeeId, currentUser);
   renderUsersTable();
+  showNotification('使用者已成功停用', 'success');
 }
 
 // ============================================================
@@ -1047,7 +1107,7 @@ function renderAuditLogsTable() {
         <td><small style="color:#6B7280">${log.id}</small></td>
         <td><strong>${log.action}</strong></td>
         <td><span class="badge badge-viewer">${logUserName}</span></td>
-        <td>${log.target}</td>
+        <td class="text-truncate">${log.target}</td>
         <td><small style="color:#6B7280">${formatDate(log.timestamp)}</small></td>
       </tr>
     `;

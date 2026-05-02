@@ -125,6 +125,99 @@ function dismissNotification(el) {
 // ── 全域快取 ──
 let currentUser = null;
 
+// ── 分頁與搜尋狀態 ──
+let ordersPage = 1;
+let customersPage = 1;
+let usersPage = 1;
+let logsPage = 1;
+const PAGE_SIZE = 10;
+
+// 搜尋條件
+let orderSearch = { field: 'id', keyword: '', dateFrom: '', dateTo: '' };
+let customerSearch = { field: 'customerId', keyword: '' };
+let auditSearch = { field: 'action', keyword: '', dateFrom: '', dateTo: '' };
+let userSearch = { field: 'employeeId', keyword: '' };
+
+// ── 目標三：Custom Dropdown 管理 ──
+function initDropdown(dropdownId, onChange) {
+  const dropdown = document.getElementById(dropdownId);
+  if (!dropdown) return;
+
+  const trigger = dropdown.querySelector('.dropdown-trigger');
+  const menu = dropdown.querySelector('.dropdown-menu');
+  const labelEl = dropdown.querySelector('.dropdown-label');
+
+  // 開關選單
+  trigger.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const isOpen = dropdown.classList.contains('open');
+    closeAllDropdowns();
+    if (!isOpen) dropdown.classList.add('open');
+  });
+
+  // 選取選項
+  menu.querySelectorAll('.dropdown-item').forEach(item => {
+    item.addEventListener('click', () => {
+      menu.querySelectorAll('.dropdown-item').forEach(i => i.classList.remove('active'));
+      item.classList.add('active');
+      labelEl.textContent = item.textContent;
+      dropdown.dataset.value = item.dataset.value;
+      dropdown.classList.remove('open');
+      if (onChange) onChange(item.dataset.value, item.textContent);
+    });
+  });
+}
+
+function getDropdownValue(dropdownId) {
+  return document.getElementById(dropdownId)?.dataset.value || '';
+}
+
+function setDropdownValue(dropdownId, value) {
+  const dropdown = document.getElementById(dropdownId);
+  if (!dropdown) return;
+  const item = dropdown.querySelector(`.dropdown-item[data-value="${value}"]`);
+  if (item) {
+    // 模擬點擊以觸發 UI 更新與 callback
+    item.click();
+  }
+}
+
+function closeAllDropdowns() {
+  document.querySelectorAll('.custom-dropdown.open').forEach(d => d.classList.remove('open'));
+}
+
+document.addEventListener('click', closeAllDropdowns);
+
+// ── 通用分頁元件渲染 ──
+function createPaginator(totalItems, pageSize, currentPage, onPageChange, containerId) {
+  const container = document.getElementById(containerId);
+  if (!container) return;
+
+  const totalPages = Math.ceil(totalItems / pageSize) || 1;
+  if (currentPage > totalPages) currentPage = totalPages;
+
+  let html = `
+    <button ${currentPage === 1 ? 'disabled' : ''} data-page="${currentPage - 1}">上一頁</button>
+  `;
+
+  // 簡化版分頁：顯示所有頁碼（若頁數極多再考慮省略號）
+  for (let i = 1; i <= totalPages; i++) {
+    html += `<button class="${i === currentPage ? 'active' : ''}" data-page="${i}">${i}</button>`;
+  }
+
+  html += `
+    <button ${currentPage === totalPages ? 'disabled' : ''} data-page="${currentPage + 1}">下一頁</button>
+  `;
+
+  container.innerHTML = html;
+
+  container.querySelectorAll('button:not([disabled])').forEach(btn => {
+    btn.addEventListener('click', () => {
+      onPageChange(Number(btn.dataset.page));
+    });
+  });
+}
+
 // ============================================================
 // 初始化
 // ============================================================
@@ -262,12 +355,58 @@ function navigateTo(sectionId) {
   });
 }
 
+// 更新訂單總覽數據 (依設計圖)
+function updateOrderOverview(orders) {
+  const total = orders.length;
+  const pending = orders.filter(o => o.status === '處理中').length;
+  const done = orders.filter(o => o.status === '已完成').length;
+  const voidCount = orders.filter(o => o.status === '已作廢').length;
+  
+  const rate = total > 0 ? Math.round((done / total) * 100) : 0;
+
+  // 更新總筆數
+  const totalEl = document.getElementById('overviewTotal');
+  if (totalEl) totalEl.textContent = total;
+
+  // 更新狀態計數
+  const pendingEl = document.getElementById('statPending');
+  const doneEl = document.getElementById('statDone');
+  const voidEl = document.getElementById('statVoid');
+
+  if (pendingEl) pendingEl.textContent = pending;
+  if (doneEl) doneEl.textContent = done;
+  if (voidEl) voidEl.textContent = voidCount;
+
+  // 更新進度條與完成率
+  const fillEl = document.getElementById('overviewProgressFill');
+  const labelEl = document.getElementById('overviewProgressLabel');
+
+  if (fillEl) fillEl.style.width = `${rate}%`;
+  if (labelEl) labelEl.textContent = `完成率 ${rate}%`;
+}
+
 function loadSectionData(sectionId) {
   switch (sectionId) {
-    case 'orders': renderOrdersTable(); break;
-    case 'customers': renderCustomersTable(); break;
-    case 'users': if (isAdmin(currentUser)) renderUsersTable(); break;
-    case 'auditlogs': if (isAdmin(currentUser)) renderAuditLogsTable(); break;
+    case 'orders': 
+      ordersPage = 1; // 切換 Section 時重設分頁
+      renderOrdersTable(); 
+      break;
+    case 'customers': 
+      customersPage = 1;
+      renderCustomersTable(); 
+      break;
+    case 'users': 
+      if (isAdmin(currentUser)) {
+        usersPage = 1;
+        renderUsersTable(); 
+      }
+      break;
+    case 'auditlogs': 
+      if (isAdmin(currentUser)) {
+        logsPage = 1;
+        renderAuditLogsTable(); 
+      }
+      break;
     case 'change-password': renderChangePasswordSection(); break;
   }
 }
@@ -280,14 +419,41 @@ function renderOrdersTable() {
   const tbody = document.getElementById('ordersTableBody');
   if (!tbody) return;
 
-  const orders = getVisibleOrders(currentUser);
   const usersList = getUsers();
+  let orders = getVisibleOrders(currentUser);
 
-  tbody.innerHTML = orders.map(order => {
-    let badgeClass = 'badge-secondary';
-    if (order.status === '處理中') badgeClass = 'badge-info';
-    if (order.status === '已完成') badgeClass = 'badge-success';
+  // 搜尋過濾
+  if (orderSearch.keyword) {
+    const kw = orderSearch.keyword.toLowerCase();
+    orders = orders.filter(order => {
+      let val = '';
+      if (orderSearch.field === 'ownerName') {
+        const owner = usersList.find(u => u.employeeId === order.ownerId);
+        val = owner ? owner.name : order.ownerId;
+      } else {
+        val = String(order[orderSearch.field] || '');
+      }
+      return val.toLowerCase().includes(kw);
+    });
+  }
 
+  // 日期篩選
+  if (orderSearch.dateFrom || orderSearch.dateTo) {
+    orders = orders.filter(order => {
+      const orderDate = order.createdAt.split('T')[0];
+      if (orderSearch.dateFrom && orderDate < orderSearch.dateFrom) return false;
+      if (orderSearch.dateTo && orderDate > orderSearch.dateTo) return false;
+      return true;
+    });
+  }
+
+  const total = orders.length;
+  // 分頁切片
+  const start = (ordersPage - 1) * PAGE_SIZE;
+  const pagedOrders = orders.slice(start, start + PAGE_SIZE);
+
+  tbody.innerHTML = pagedOrders.map(order => {
+    const statusClass = order.status === '已完成' ? 'badge-success' : (order.status === '處理中' ? 'badge-info' : 'badge-void');
     const product = defaultProducts.find(p => p.productId === order.productId);
     const productName = product ? product.name : '-';
     const ownerUser = usersList.find(u => u.employeeId === order.ownerId);
@@ -296,33 +462,49 @@ function renderOrdersTable() {
     let actionsHtml = '';
     if (order.status !== '已作廢') {
       if (canEditOrder(currentUser, order)) {
-        actionsHtml += `<button class="btn-secondary btn-edit-order" data-id="${order.id}">編輯</button>`;
+        actionsHtml += `<button class="btn-secondary" onclick="openOrderModal('${order.id}')">編輯</button>`;
       }
       if (canVoidOrder(currentUser)) {
-        actionsHtml += `<button class="btn-danger btn-void-order" data-id="${order.id}">作廢</button>`;
+        actionsHtml += `<button class="btn-danger" onclick="deleteOrder('${order.id}')">作廢</button>`;
       }
     }
 
     return `
       <tr>
-        <td><strong>${order.id}</strong></td>
+        <td>
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span class="info-tooltip">
+              <span class="info-icon">i</span>
+              <div class="tooltip-box">
+                <div class="tooltip-row">
+                  <span class="tooltip-label">建立時間</span>
+                  <span class="tooltip-value">${formatDate(order.createdAt)}</span>
+                </div>
+                <div class="tooltip-row">
+                  <span class="tooltip-label">更新時間</span>
+                  <span class="tooltip-value">${formatDate(order.updatedAt || '-')}</span>
+                </div>
+              </div>
+            </span>
+            <strong>${order.id}</strong>
+          </div>
+        </td>
         <td>${order.customer}</td>
         <td>${productName}</td>
         <td>$${Number(order.amount).toLocaleString()}</td>
-        <td><span class="badge ${badgeClass}">${order.status}</span></td>
+        <td><span class="badge ${statusClass}">${order.status}</span></td>
         <td><span class="badge badge-viewer">${ownerName}</span></td>
         <td class="actions-cell">${actionsHtml}</td>
       </tr>
     `;
   }).join('');
 
-  // 動態事件綁定
-  tbody.querySelectorAll('.btn-edit-order').forEach(btn => {
-    btn.addEventListener('click', () => openOrderModal(btn.dataset.id));
-  });
-  tbody.querySelectorAll('.btn-void-order').forEach(btn => {
-    btn.addEventListener('click', () => voidOrder(btn.dataset.id));
-  });
+  updateOrderOverview(orders);
+
+  createPaginator(total, PAGE_SIZE, ordersPage, (newPage) => {
+    ordersPage = newPage;
+    renderOrdersTable();
+  }, 'ordersPaginator');
 }
 
 function openOrderModal(orderId = null) {
@@ -331,13 +513,32 @@ function openOrderModal(orderId = null) {
   const modal = document.getElementById('orderModal');
   const title = document.getElementById('modalTitle');
   const idInput = document.getElementById('orderId');
-  const customerInput = document.getElementById('orderCustomer');
-  const productSelect = document.getElementById('orderProduct');
   const amountInput = document.getElementById('orderAmount');
 
-  // 填充商品選單
-  productSelect.innerHTML = '<option value="">請選擇商品</option>' +
-    defaultProducts.map(p => `<option value="${p.productId}">${p.name} - $${p.price}</option>`).join('');
+  // 目標三：填充商品選單 (Dropdown 版)
+  const productMenu = document.getElementById('orderProductMenu');
+  productMenu.innerHTML = defaultProducts.map(p => `
+    <li class="dropdown-item" data-value="${p.productId}">${p.name} - $${p.price}</li>
+  `).join('');
+  initDropdown('orderProductDropdown', (val) => {
+    const product = defaultProducts.find(p => p.productId === val);
+    if (product) amountInput.value = product.price;
+  });
+
+  // 目標四：動態填充客戶選單
+  const customers = getVisibleCustomers(currentUser).filter(c => c.status === 'active');
+  const customerMenu = document.getElementById('orderCustomerMenu');
+  const customerLabel = document.querySelector('#orderCustomerDropdown .dropdown-label');
+
+  customerMenu.innerHTML = customers.map(c => `
+    <li class="dropdown-item" data-value="${c.name}" data-id="${c.customerId}">
+      ${c.name}（${c.customerId}）
+    </li>
+  `).join('');
+
+  initDropdown('orderCustomerDropdown', (value) => {
+    customerLabel.style.color = ''; // 選取後移除灰色
+  });
 
   if (orderId) {
     const orders = getOrders();
@@ -347,15 +548,25 @@ function openOrderModal(orderId = null) {
 
     title.textContent = '編輯訂單';
     idInput.value = order.id;
-    customerInput.value = order.customer;
-    productSelect.value = order.productId;
     amountInput.value = order.amount;
+    
+    // 設定 Dropdown 預設值
+    setDropdownValue('orderProductDropdown', order.productId);
+    setDropdownValue('orderCustomerDropdown', order.customer);
+    customerLabel.style.color = '';
   } else {
     title.textContent = '新增訂單';
     idInput.value = '';
-    customerInput.value = '';
-    productSelect.value = '';
     amountInput.value = '';
+    
+    // 重置 Dropdown
+    const productLabel = document.querySelector('#orderProductDropdown .dropdown-label');
+    productLabel.textContent = '請選擇商品';
+    document.getElementById('orderProductDropdown').dataset.value = '';
+    
+    customerLabel.textContent = '請選擇客戶';
+    customerLabel.style.color = '#9CA3AF';
+    document.getElementById('orderCustomerDropdown').dataset.value = '';
   }
 
   modal.classList.add('active');
@@ -365,21 +576,16 @@ function closeOrderModal() {
   document.getElementById('orderModal').classList.remove('active');
 }
 
-function handleProductChange() {
-  const productId = document.getElementById('orderProduct').value;
-  const product = defaultProducts.find(p => p.productId === productId);
-  if (product) document.getElementById('orderAmount').value = product.price;
-}
-
 function saveOrder() {
   if (!canCreateOrder(currentUser)) { showNotification('無權限操作', 'error'); return; }
 
   const id = document.getElementById('orderId').value;
-  const customer = document.getElementById('orderCustomer').value.trim();
-  const productId = document.getElementById('orderProduct').value;
+  const customer = getDropdownValue('orderCustomerDropdown');
+  const productId = getDropdownValue('orderProductDropdown');
   const amount = document.getElementById('orderAmount').value;
 
-  if (!customer || !productId || !amount) { showNotification('請填寫完整資訊', 'warning'); return; }
+  if (!customer) { showNotification('請選擇客戶', 'warning'); return; }
+  if (!productId || !amount) { showNotification('請選擇商品', 'warning'); return; }
 
   const allOrders = getOrders();
   const now = new Date().toISOString();
@@ -437,12 +643,46 @@ function voidOrder(id) {
 
 function renderCustomersTable() {
   const tbody = document.getElementById('customersTableBody');
-  if (!tbody) return;
+  const thead = document.querySelector('#section-customers .data-table thead tr');
+  if (!tbody || !thead) return;
 
-  const customers = getVisibleCustomers(currentUser);
   const usersList = getUsers();
+  let customers = getVisibleCustomers(currentUser);
 
-  tbody.innerHTML = customers.map(customer => {
+  // 搜尋過濾
+  if (customerSearch.keyword) {
+    const kw = customerSearch.keyword.toLowerCase();
+    customers = customers.filter(c => {
+      let val = '';
+      if (customerSearch.field === 'ownerName') {
+        const owner = usersList.find(u => u.employeeId === c.ownerId);
+        val = owner ? owner.name : c.ownerId;
+      } else {
+        val = String(c[customerSearch.field] || '');
+      }
+      return val.toLowerCase().includes(kw);
+    });
+  }
+
+  // 判斷是否顯示操作欄 (目標四)
+  // 若是 Viewer 且沒有編輯/作廢權限，則隱藏
+  const showActions = canEditCustomer(currentUser, { ownerId: currentUser.employeeId }) || canVoidCustomer(currentUser);
+
+  // 處理 Header
+  const actionTh = thead.querySelector('th:last-child');
+  if (showActions) {
+    if (actionTh && actionTh.textContent !== '操作') {
+      // 避免重複添加，但原本就有操作的話通常不需要處理
+    }
+  } else {
+    if (actionTh && actionTh.textContent === '操作') actionTh.remove();
+  }
+
+  const total = customers.length;
+  const start = (customersPage - 1) * PAGE_SIZE;
+  const pagedCustomers = customers.slice(start, start + PAGE_SIZE);
+
+  tbody.innerHTML = pagedCustomers.map(customer => {
     const badgeClass = customer.status === 'active' ? 'badge-success' : 'badge-secondary';
     const ownerUser = usersList.find(u => u.employeeId === customer.ownerId);
     const ownerName = ownerUser ? ownerUser.name : customer.ownerId;
@@ -466,10 +706,16 @@ function renderCustomersTable() {
         <td><span class="badge ${badgeClass}">${customer.status}</span></td>
         <td><small style="color:#6B7280">${formatDate(customer.createdAt)}</small></td>
         <td><small style="color:#6B7280">${formatDate(customer.updatedAt)}</small></td>
-        <td class="actions-cell">${actionsHtml}</td>
+        ${showActions ? `<td class="actions-cell">${actionsHtml}</td>` : ''}
       </tr>
     `;
   }).join('');
+
+  // 渲染分頁元件
+  createPaginator(total, PAGE_SIZE, customersPage, (newPage) => {
+    customersPage = newPage;
+    renderCustomersTable();
+  }, 'customersPaginator');
 
   tbody.querySelectorAll('.btn-edit-customer').forEach(btn => {
     btn.addEventListener('click', () => openCustomerModal(btn.dataset.id));
@@ -578,9 +824,22 @@ function renderUsersTable() {
   const tbody = document.getElementById('usersTableBody');
   if (!tbody) return;
 
-  const users = getUsers();
+  let users = getUsers();
 
-  tbody.innerHTML = users.map(u => {
+  // 搜尋過濾
+  if (userSearch.keyword) {
+    const kw = userSearch.keyword.toLowerCase();
+    users = users.filter(u => {
+      const val = String(u[userSearch.field] || '');
+      return val.toLowerCase().includes(kw);
+    });
+  }
+
+  const total = users.length;
+  const start = (usersPage - 1) * PAGE_SIZE;
+  const pagedUsers = users.slice(start, start + PAGE_SIZE);
+
+  tbody.innerHTML = pagedUsers.map(u => {
     const displayRole = u.role.charAt(0).toUpperCase() + u.role.slice(1);
     const status = u.status || 'active';
     const badgeClass = status === 'active' ? 'badge-success' : 'badge-secondary';
@@ -611,6 +870,11 @@ function renderUsersTable() {
     `;
   }).join('');
 
+  createPaginator(total, PAGE_SIZE, usersPage, (newPage) => {
+    usersPage = newPage;
+    renderUsersTable();
+  }, 'usersPaginator');
+
   tbody.querySelectorAll('.btn-edit-user').forEach(btn => {
     btn.addEventListener('click', () => openUserModal(btn.dataset.id));
   });
@@ -631,6 +895,8 @@ function openUserModal(employeeId = null) {
 
   const users = getUsers();
 
+  initDropdown('userRoleDropdown');
+
   if (employeeId) {
     // 編輯模式
     const u = users.find(x => x.employeeId === employeeId);
@@ -641,7 +907,7 @@ function openUserModal(employeeId = null) {
     idInput.dataset.mode = 'edit';
     nameInput.value = u.name;
     emailInput.value = u.email;
-    roleSelect.value = u.role;
+    setDropdownValue('userRoleDropdown', u.role);
   } else {
     // 新增模式
     const newEmployeeId = generateEmployeeId(users);
@@ -651,7 +917,7 @@ function openUserModal(employeeId = null) {
     idInput.dataset.mode = 'create';
     nameInput.value = '';
     emailInput.value = `${newEmployeeId}@test.com`;
-    roleSelect.value = 'viewer';
+    setDropdownValue('userRoleDropdown', 'viewer');
   }
 
   modal.classList.add('active');
@@ -744,15 +1010,37 @@ function renderAuditLogsTable() {
   const tbody = document.getElementById('auditLogsTableBody');
   if (!tbody) return;
 
-  const logs = getLogs();
-  const usersList = getUsers();
+  let logs = getLogs();
+
+  // 搜尋過濾
+  if (auditSearch.keyword) {
+    const kw = auditSearch.keyword.toLowerCase();
+    logs = logs.filter(log => {
+      const val = String(log[auditSearch.field] || '');
+      return val.toLowerCase().includes(kw);
+    });
+  }
+
+  // 日期篩選
+  if (auditSearch.dateFrom || auditSearch.dateTo) {
+    logs = logs.filter(log => {
+      const logDate = log.timestamp.split('T')[0];
+      if (auditSearch.dateFrom && logDate < auditSearch.dateFrom) return false;
+      if (auditSearch.dateTo && logDate > auditSearch.dateTo) return false;
+      return true;
+    });
+  }
 
   // 依時間降冪排序
   logs.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
 
-  tbody.innerHTML = logs.map(log => {
-    const logUser = usersList.find(u => u.employeeId === log.userId);
-    const logUserName = logUser ? logUser.name : log.userId;
+  const total = logs.length;
+  const start = (logsPage - 1) * PAGE_SIZE;
+  const pagedLogs = logs.slice(start, start + PAGE_SIZE);
+
+  tbody.innerHTML = pagedLogs.map(log => {
+    // 目標一：直接顯示 userId
+    const logUserName = log.userId;
 
     return `
       <tr>
@@ -764,6 +1052,11 @@ function renderAuditLogsTable() {
       </tr>
     `;
   }).join('');
+
+  createPaginator(total, PAGE_SIZE, logsPage, (newPage) => {
+    logsPage = newPage;
+    renderAuditLogsTable();
+  }, 'auditLogsPaginator');
 }
 
 // ============================================================
@@ -806,6 +1099,96 @@ function bindEvents() {
     el.addEventListener('click', () => {
       toggleSidebar(false);
     });
+  });
+
+  // 初始化搜尋 Dropdowns
+  initDropdown('orderFieldDropdown', (val) => {
+    orderSearch.field = val;
+    ordersPage = 1;
+    renderOrdersTable();
+  });
+  initDropdown('customerFieldDropdown', (val) => {
+    customerSearch.field = val;
+    customersPage = 1;
+    renderCustomersTable();
+  });
+  initDropdown('auditFieldDropdown', (val) => {
+    auditSearch.field = val;
+    logsPage = 1;
+    renderAuditLogsTable();
+  });
+
+  // 搜尋事件：訂單管理
+  document.getElementById('orderSearchKeyword')?.addEventListener('input', (e) => {
+    orderSearch.keyword = e.target.value;
+    ordersPage = 1;
+    renderOrdersTable();
+  });
+  document.getElementById('orderDateFrom')?.addEventListener('change', (e) => {
+    orderSearch.dateFrom = e.target.value;
+    ordersPage = 1;
+    renderOrdersTable();
+  });
+  document.getElementById('orderDateTo')?.addEventListener('change', (e) => {
+    orderSearch.dateTo = e.target.value;
+    ordersPage = 1;
+    renderOrdersTable();
+  });
+  document.getElementById('orderDateReset')?.addEventListener('click', () => {
+    orderSearch.dateFrom = '';
+    orderSearch.dateTo = '';
+    const from = document.getElementById('orderDateFrom');
+    const to = document.getElementById('orderDateTo');
+    if (from) from.value = '';
+    if (to) to.value = '';
+    ordersPage = 1;
+    renderOrdersTable();
+  });
+
+  // 搜尋事件：客戶管理
+  document.getElementById('customerSearchKeyword')?.addEventListener('input', (e) => {
+    customerSearch.keyword = e.target.value;
+    customersPage = 1;
+    renderCustomersTable();
+  });
+
+  // 搜尋事件：操作紀錄
+  document.getElementById('auditSearchKeyword')?.addEventListener('input', (e) => {
+    auditSearch.keyword = e.target.value;
+    logsPage = 1;
+    renderAuditLogsTable();
+  });
+  document.getElementById('auditDateFrom')?.addEventListener('change', (e) => {
+    auditSearch.dateFrom = e.target.value;
+    logsPage = 1;
+    renderAuditLogsTable();
+  });
+  document.getElementById('auditDateTo')?.addEventListener('change', (e) => {
+    auditSearch.dateTo = e.target.value;
+    logsPage = 1;
+    renderAuditLogsTable();
+  });
+  document.getElementById('auditDateReset')?.addEventListener('click', () => {
+    auditSearch.dateFrom = '';
+    auditSearch.dateTo = '';
+    const from = document.getElementById('auditDateFrom');
+    const to = document.getElementById('auditDateTo');
+    if (from) from.value = '';
+    if (to) to.value = '';
+    logsPage = 1;
+    renderAuditLogsTable();
+  });
+
+  // 搜尋事件：使用者管理
+  initDropdown('userFieldDropdown', (val) => {
+    userSearch.field = val;
+    usersPage = 1;
+    renderUsersTable();
+  });
+  document.getElementById('userSearchKeyword')?.addEventListener('input', (e) => {
+    userSearch.keyword = e.target.value;
+    usersPage = 1;
+    renderUsersTable();
   });
 
   // Order Modal 按鈕

@@ -76,10 +76,65 @@
                 </section>
 
                 <!-- Orders Section -->
-                <section id="section-orders" class="section-content">
+                <section id="section-orders" class="section-content theme-order">
                     <div class="section-header">
                         <h2>訂單管理</h2>
-                        <button class="btn-primary" id="addOrderBtn" style="display: none;">+ 新增訂單</button>
+                        <button class="btn-add" id="addOrderBtn" style="display: none;">+ 新增訂單</button>
+                    </div>
+                    <!-- 搜尋列 -->
+                    <div class="search-bar">
+                        <div class="custom-dropdown" id="orderFieldDropdown">
+                            <button class="dropdown-trigger" type="button">
+                                <span class="dropdown-label">訂單編號</span>
+                                <span class="dropdown-arrow">▾</span>
+                            </button>
+                            <ul class="dropdown-menu">
+                                <li class="dropdown-item active" data-value="id">訂單編號</li>
+                                <li class="dropdown-item" data-value="customer">客戶名稱</li>
+                                <li class="dropdown-item" data-value="ownerName">負責人</li>
+                                <li class="dropdown-item" data-value="status">狀態</li>
+                            </ul>
+                        </div>
+                        <input class="search-input" id="orderSearchKeyword" type="text" placeholder="請輸入關鍵字">
+                    </div>
+
+                    <!-- 訂單總覽卡片 (依設計圖) -->
+                    <div class="order-overview-card" id="orderOverview">
+                        <div class="overview-title">訂單總覽</div>
+                        <div class="overview-total-group">
+                            <span class="overview-total-num" id="overviewTotal">0</span>
+                            <span class="overview-total-label">筆</span>
+                        </div>
+                        
+                        <div class="overview-stats-row">
+                            <div class="stat-item">
+                                <span class="stat-dot pending"></span>
+                                處理中 <span class="stat-count" id="statPending">0</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-dot done"></span>
+                                已完成 <span class="stat-count" id="statDone">0</span>
+                            </div>
+                            <div class="stat-item">
+                                <span class="stat-dot void"></span>
+                                已作廢 <span class="stat-count" id="statVoid">0</span>
+                            </div>
+                        </div>
+
+                        <div class="overview-footer">
+                            <div class="overview-progress-bar">
+                                <div class="overview-progress-fill" id="overviewProgressFill"></div>
+                            </div>
+                            <span class="overview-progress-label" id="overviewProgressLabel">完成率 0%</span>
+                        </div>
+                    </div>
+
+                    <div class="search-bar search-bar-date">
+                        <label class="date-label">建立時間</label>
+                        <input class="search-input-date" id="orderDateFrom" type="date">
+                        <span class="date-separator">～</span>
+                        <input class="search-input-date" id="orderDateTo" type="date">
+                        <button class="btn-reset-date" id="orderDateReset">清除</button>
                     </div>
                     <div class="table-container">
                         <table class="data-table">
@@ -99,13 +154,30 @@
                             </tbody>
                         </table>
                     </div>
+                    <div id="ordersPaginator" class="paginator"></div>
                 </section>
 
                 <!-- Customers Section -->
                 <section id="section-customers" class="section-content theme-customer">
                     <div class="section-header">
                         <h2>客戶管理</h2>
-                        <button class="btn-primary" id="addCustomerBtn" style="display: none;">+ 新增客戶</button>
+                        <button class="btn-add" id="addCustomerBtn" style="display: none;">+ 新增客戶</button>
+                    </div>
+                    <!-- 搜尋列 -->
+                    <div class="search-bar">
+                        <div class="custom-dropdown" id="customerFieldDropdown">
+                            <button class="dropdown-trigger" type="button">
+                                <span class="dropdown-label">客戶編號</span>
+                                <span class="dropdown-arrow">▾</span>
+                            </button>
+                            <ul class="dropdown-menu">
+                                <li class="dropdown-item active" data-value="customerId">客戶編號</li>
+                                <li class="dropdown-item" data-value="name">客戶名稱</li>
+                                <li class="dropdown-item" data-value="ownerName">負責人</li>
+                                <li class="dropdown-item" data-value="status">狀態</li>
+                            </ul>
+                        </div>
+                        <input class="search-input" id="customerSearchKeyword" type="text" placeholder="請輸入關鍵字">
                     </div>
                     <div class="table-container">
                         <table class="data-table">
@@ -126,13 +198,28 @@
                             </tbody>
                         </table>
                     </div>
+                    <div id="customersPaginator" class="paginator"></div>
                 </section>
 
                 <!-- Users Section (Admin Only) -->
                 <section id="section-users" class="section-content theme-user">
                     <div class="section-header">
-                        <h2>使用者管理 (User Management)</h2>
-                        <button class="btn-primary" id="addUserBtn">+ 新增使用者</button>
+                        <h2>使用者管理</h2>
+                        <button class="btn-add" id="addUserBtn">+ 新增使用者</button>
+                    </div>
+                    <!-- 搜尋列 -->
+                    <div class="search-bar">
+                        <div class="custom-dropdown" id="userFieldDropdown" data-value="employeeId">
+                            <button class="dropdown-trigger" type="button">
+                                <span class="dropdown-label">員工編號</span>
+                                <span class="dropdown-arrow">▾</span>
+                            </button>
+                            <ul class="dropdown-menu">
+                                <li class="dropdown-item active" data-value="employeeId">員工編號</li>
+                                <li class="dropdown-item" data-value="role">角色</li>
+                            </ul>
+                        </div>
+                        <input class="search-input" id="userSearchKeyword" type="text" placeholder="請輸入關鍵字">
                     </div>
                     <div class="table-container">
                         <table class="data-table">
@@ -151,12 +238,34 @@
                             </tbody>
                         </table>
                     </div>
+                    <div id="usersPaginator" class="paginator"></div>
                 </section>
 
                 <!-- Audit Logs Section (Admin Only) -->
-                <section id="section-auditlogs" class="section-content">
+                <section id="section-auditlogs" class="section-content theme-auditlog">
                     <div class="section-header">
-                        <h2>操作紀錄 (Audit Log)</h2>
+                        <h2>操作紀錄</h2>
+                    </div>
+                    <!-- 搜尋列 -->
+                    <div class="search-bar">
+                        <div class="custom-dropdown" id="auditFieldDropdown">
+                            <button class="dropdown-trigger" type="button">
+                                <span class="dropdown-label">操作類型</span>
+                                <span class="dropdown-arrow">▾</span>
+                            </button>
+                            <ul class="dropdown-menu">
+                                <li class="dropdown-item active" data-value="action">操作類型</li>
+                                <li class="dropdown-item" data-value="userId">Employee ID</li>
+                            </ul>
+                        </div>
+                        <input class="search-input" id="auditSearchKeyword" type="text" placeholder="請輸入關鍵字">
+                    </div>
+                    <div class="search-bar search-bar-date">
+                        <label class="date-label">操作時間</label>
+                        <input class="search-input-date" id="auditDateFrom" type="date">
+                        <span class="date-separator">～</span>
+                        <input class="search-input-date" id="auditDateTo" type="date">
+                        <button class="btn-reset-date" id="auditDateReset">清除</button>
                     </div>
                     <div class="table-container">
                         <table class="data-table">
@@ -174,11 +283,13 @@
                             </tbody>
                         </table>
                     </div>
+                    <div id="auditLogsPaginator" class="paginator"></div>
                 </section>
 
                 <!-- Change Password Section -->
                 <section id="section-change-password" class="section-content centered-flex">
-                    <div class="section-header" style="display: flex; flex-direction: column; align-items: center; text-align: center; margin-bottom: 32px; gap: 8px;">
+                    <div class="section-header"
+                        style="display: flex; flex-direction: column; align-items: center; text-align: center; margin-bottom: 32px; gap: 8px;">
                         <h2>安全中心：修改密碼</h2>
                         <p class="hint-text">建議定期更換密碼以保護帳號安全</p>
                     </div>
@@ -229,14 +340,28 @@
                 <form id="orderForm">
                     <input type="hidden" id="orderId">
                     <div class="form-group">
-                        <label for="orderCustomer">客戶名稱</label>
-                        <input type="text" id="orderCustomer" required>
+                        <label>客戶名稱</label>
+                        <div class="custom-dropdown" id="orderCustomerDropdown" data-value="" style="width: 100%;">
+                            <button class="dropdown-trigger" type="button" style="width: 100%;">
+                                <span class="dropdown-label" style="color: #9CA3AF;">請選擇客戶</span>
+                                <span class="dropdown-arrow">▾</span>
+                            </button>
+                            <ul class="dropdown-menu" id="orderCustomerMenu">
+                                <!-- 由 JS 動態填充 -->
+                            </ul>
+                        </div>
                     </div>
                     <div class="form-group">
-                        <label for="orderProduct">商品</label>
-                        <select id="orderProduct" required>
-                            <!-- 由 JS 填充 -->
-                        </select>
+                        <label>商品</label>
+                        <div class="custom-dropdown" id="orderProductDropdown" data-value="" style="width: 100%;">
+                            <button class="dropdown-trigger" type="button" style="width: 100%;">
+                                <span class="dropdown-label">請選擇商品</span>
+                                <span class="dropdown-arrow">▾</span>
+                            </button>
+                            <ul class="dropdown-menu" id="orderProductMenu">
+                                <!-- 由 JS 動態填充 -->
+                            </ul>
+                        </div>
                     </div>
                     <div class="form-group">
                         <label for="orderAmount">金額</label>
@@ -299,12 +424,18 @@
                         <input type="email" id="userEmail" readonly style="background-color: #F3F4F6;">
                     </div>
                     <div class="form-group">
-                        <label for="userRole">角色</label>
-                        <select id="userRole" required>
-                            <option value="admin">Admin</option>
-                            <option value="sales">Sales</option>
-                            <option value="viewer">Viewer</option>
-                        </select>
+                        <label>角色</label>
+                        <div class="custom-dropdown" id="userRoleDropdown" data-value="viewer" style="width: 100%;">
+                            <button class="dropdown-trigger" type="button" style="width: 100%;">
+                                <span class="dropdown-label">Viewer</span>
+                                <span class="dropdown-arrow">▾</span>
+                            </button>
+                            <ul class="dropdown-menu">
+                                <li class="dropdown-item active" data-value="admin">Admin</li>
+                                <li class="dropdown-item" data-value="sales">Sales</li>
+                                <li class="dropdown-item" data-value="viewer">Viewer</li>
+                            </ul>
+                        </div>
                     </div>
                 </form>
             </div>

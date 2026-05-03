@@ -88,7 +88,11 @@ export function getCurrentUser() {
 }
 
 export function setCurrentUser(sessionInfo) {
-  localStorage.setItem('currentUser', JSON.stringify(sessionInfo));
+  try {
+    localStorage.setItem('currentUser', JSON.stringify(sessionInfo));
+  } catch (e) {
+    console.error('[setCurrentUser] localStorage 寫入失敗', e);
+  }
 }
 
 export function clearCurrentUser() {
@@ -98,7 +102,12 @@ export function clearCurrentUser() {
 // ── Orders CRUD ──
 
 export function getOrders() {
-  return JSON.parse(localStorage.getItem('orders') || '[]');
+  try {
+    return JSON.parse(localStorage.getItem('orders') || '[]');
+  } catch (e) {
+    console.error('[getOrders] 資料解析失敗', e);
+    return [];
+  }
 }
 
 export function getVisibleOrders(currentUser) {
@@ -112,7 +121,12 @@ export function saveOrders(orders) {
 // ── Customers CRUD ──
 
 export function getCustomers() {
-  return JSON.parse(localStorage.getItem('customers') || '[]');
+  try {
+    return JSON.parse(localStorage.getItem('customers') || '[]');
+  } catch (e) {
+    console.error('[getCustomers] 資料解析失敗', e);
+    return [];
+  }
 }
 
 export function getVisibleCustomers(currentUser) {
@@ -126,7 +140,12 @@ export function saveCustomers(customers) {
 // ── Users CRUD ──
 
 export function getUsers() {
-  return JSON.parse(localStorage.getItem('users') || '[]');
+  try {
+    return JSON.parse(localStorage.getItem('users') || '[]');
+  } catch (e) {
+    console.error('[getUsers] 資料解析失敗', e);
+    return [];
+  }
 }
 
 export function saveUsers(users) {
@@ -136,5 +155,10 @@ export function saveUsers(users) {
 // ── Audit Logs Read ──
 
 export function getLogs() {
-  return JSON.parse(localStorage.getItem('auditLogs') || '[]');
+  try {
+    return JSON.parse(localStorage.getItem('auditLogs') || '[]');
+  } catch (e) {
+    console.error('[getLogs] 資料解析失敗', e);
+    return [];
+  }
 }

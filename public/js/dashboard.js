@@ -132,6 +132,12 @@ function showConfirm(message, title = '確認操作') {
     const cancelBtn = document.getElementById('confirmCancelBtn');
     const closeBtn = document.getElementById('closeConfirmBtn');
 
+    if (!modal || !msgEl || !titleEl || !okBtn || !cancelBtn || !closeBtn) {
+      console.error('[showConfirm] 找不到確認對話框所需之元素');
+      resolve(false);
+      return;
+    }
+
     msgEl.textContent = message;
     titleEl.textContent = title;
     modal.classList.add('active');
@@ -309,13 +315,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
 function initUI() {
   // Topbar
-  document.getElementById('displayEmployeeId').textContent = currentUser.name || currentUser.employeeId;
-  document.getElementById('welcomeUserName').textContent = currentUser.name || currentUser.employeeId;
+  const displayIdEl = document.getElementById('displayEmployeeId');
+  const welcomeUserEl = document.getElementById('welcomeUserName');
+  if (displayIdEl) displayIdEl.textContent = currentUser.name || currentUser.employeeId;
+  if (welcomeUserEl) welcomeUserEl.textContent = currentUser.name || currentUser.employeeId;
 
   // Role Badge
   const badgeContainer = document.getElementById('roleBadgeContainer');
-  const displayRole = currentUser.role.charAt(0).toUpperCase() + currentUser.role.slice(1);
-  badgeContainer.innerHTML = `<span class="badge badge-${currentUser.role}">${displayRole}</span>`;
+  if (badgeContainer) {
+    const displayRole = currentUser.role.charAt(0).toUpperCase() + currentUser.role.slice(1);
+    badgeContainer.innerHTML = `<span class="badge badge-${currentUser.role}">${displayRole}</span>`;
+  }
 
   // Sidebar
   renderSidebar();
@@ -379,12 +389,15 @@ function navigateTo(sectionId) {
 
     const items = getMenuItems(currentUser.role);
     const menuItem = items.find(i => i.id === sectionId);
-    if (menuItem) document.getElementById('currentPageTitle').textContent = menuItem.label;
+    const pageTitleEl = document.getElementById('currentPageTitle');
+    if (menuItem && pageTitleEl) pageTitleEl.textContent = menuItem.label;
 
     loadSectionData(sectionId);
   } else {
-    document.getElementById('section-unauthorized').classList.add('active');
-    document.getElementById('currentPageTitle').textContent = '權限不足';
+    const unauthorizedEl = document.getElementById('section-unauthorized');
+    const pageTitleEl = document.getElementById('currentPageTitle');
+    if (unauthorizedEl) unauthorizedEl.classList.add('active');
+    if (pageTitleEl) pageTitleEl.textContent = '權限不足';
   }
 
   // Sidebar active
@@ -992,7 +1005,7 @@ function saveUser() {
   const employeeId = idInput.value.trim();
   const name = document.getElementById('userName').value.trim();
   const email = document.getElementById('userEmail').value.trim();
-  const role = document.getElementById('userRole').value;
+  const role = getDropdownValue('userRoleDropdown');
   const isEdit = idInput.dataset.mode === 'edit';
 
   if (!employeeId || !name || !email) { showNotification('請填寫必填資訊', 'warning'); return; }
@@ -1256,7 +1269,6 @@ function bindEvents() {
   document.querySelector('#orderModal .btn-close')?.addEventListener('click', closeOrderModal);
   document.querySelector('#orderModal .btn-secondary')?.addEventListener('click', closeOrderModal);
   document.querySelector('#orderModal .btn-primary')?.addEventListener('click', saveOrder);
-  document.getElementById('orderProduct')?.addEventListener('change', handleProductChange);
 
   // Customer Modal 按鈕
   document.getElementById('addCustomerBtn')?.addEventListener('click', () => openCustomerModal());

@@ -32,6 +32,7 @@ export function isAdmin(user) {
 }
 
 export function canAccessMenu(user, sectionId) {
+  if (!user) return false;
   if (sectionId === 'change-password') return true;
   const items = menuConfig[user?.role] || [];
   return items.some(item => item.id === sectionId);
@@ -48,12 +49,12 @@ export function getMenuItems(role) {
 // ── 使用者管理 ──
 
 export function canEditUser(currentUser) {
-  return currentUser.role === 'admin';
+  return currentUser?.role === 'admin';
 }
 
 export function canDeactivateUser(currentUser, targetUser) {
-  if (currentUser.role !== 'admin') return false;
-  if (currentUser.employeeId === targetUser.employeeId) return false;
+  if (currentUser?.role !== 'admin') return false;
+  if (currentUser?.employeeId === targetUser?.employeeId) return false;
   return true;
 }
 
@@ -73,6 +74,7 @@ export function validateLastAdmin(users) {
  * @returns {{ allowed: boolean, reason: string }}
  */
 export function canChangeRole(users, currentUser, targetUser, newRole) {
+  if (!currentUser || !targetUser) return { allowed: false, reason: '系統錯誤：缺少使用者資訊' };
   // 角色沒變，允許
   if (targetUser.role === newRole) return { allowed: true, reason: '' };
   // 不可修改自己的角色
@@ -89,14 +91,14 @@ export function canChangeRole(users, currentUser, targetUser, newRole) {
 // ── 訂單 ──
 
 export function canViewOrder(user, order) {
-  if (user.role === 'admin') return true;
-  if (user.role === 'sales') return order.ownerId === user.employeeId;
+  if (user?.role === 'admin') return true;
+  if (user?.role === 'sales') return order?.ownerId === user?.employeeId;
   return false; // viewer 無訂單存取權
 }
 
 export function canEditOrder(user, order) {
-  if (user.role === 'admin') return true;
-  if (user.role === 'sales') return order.ownerId === user.employeeId;
+  if (user?.role === 'admin') return true;
+  if (user?.role === 'sales') return order?.ownerId === user?.employeeId;
   return false;
 }
 
@@ -111,15 +113,15 @@ export function canCreateOrder(user) {
 // ── 客戶 ──
 
 export function canViewCustomer(user, customer) {
-  if (user.role === 'admin') return true;
-  if (user.role === 'sales') return customer.ownerId === user.employeeId;
-  if (user.role === 'viewer') return true; // 唯讀可看全部
+  if (user?.role === 'admin') return true;
+  if (user?.role === 'sales') return customer?.ownerId === user?.employeeId;
+  if (user?.role === 'viewer') return true; // 唯讀可看全部
   return false;
 }
 
 export function canEditCustomer(user, customer) {
-  if (user.role === 'admin') return true;
-  if (user.role === 'sales') return customer.ownerId === user.employeeId;
+  if (user?.role === 'admin') return true;
+  if (user?.role === 'sales') return customer?.ownerId === user?.employeeId;
   return false; // viewer 不可編輯
 }
 

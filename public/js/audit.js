@@ -21,5 +21,9 @@ export function addLog(action, target, currentUser) {
     timestamp: new Date().toISOString()
   });
 
-  localStorage.setItem('auditLogs', JSON.stringify(logs));
+  try {
+    localStorage.setItem('auditLogs', JSON.stringify(logs));
+  } catch (e) {
+    console.error('[addLog] 寫入失敗', e);
+  }
 }

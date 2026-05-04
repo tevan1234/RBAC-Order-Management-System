@@ -4,24 +4,25 @@
 
 // 側邊欄選單設定（依 role 控制可見項目）
 export const menuConfig = {
-  admin:  [
-    { id: 'dashboard',  label: '儀表板',       icon: '📊' },
-    { id: 'orders',     label: '訂單管理',     icon: '🛍️' },
-    { id: 'customers',  label: '客戶管理',     icon: '👤' },
-    { id: 'users',      label: '使用者管理',   icon: '👥' },
-    { id: 'auditlogs',  label: '操作紀錄',     icon: '📝' },
-    { id: 'change-password', label: '修改密碼',   icon: '🔑' }
+  admin: [
+    { id: 'dashboard', label: '儀表板', icon: '📊' },
+    { id: 'orders', label: '訂單管理', icon: '🛍️' },
+    { id: 'customers', label: '客戶管理', icon: '👤' },
+    { id: 'users', label: '使用者管理', icon: '👥' },
+    { id: 'auditlogs', label: '操作紀錄', icon: '📝' },
+    { id: 'change-password', label: '修改密碼', icon: '🔑' }
   ],
   sales: [
-    { id: 'dashboard',  label: '儀表板',       icon: '📊' },
-    { id: 'orders',     label: '訂單管理',     icon: '🛍️' },
-    { id: 'customers',  label: '客戶管理',     icon: '👤' },
-    { id: 'change-password', label: '修改密碼',   icon: '🔑' }
+    { id: 'dashboard', label: '儀表板', icon: '📊' },
+    { id: 'orders', label: '訂單管理', icon: '🛍️' },
+    { id: 'customers', label: '客戶管理', icon: '👤' },
+    { id: 'change-password', label: '修改密碼', icon: '🔑' }
   ],
   viewer: [
-    { id: 'dashboard',  label: '儀表板 (唯讀)', icon: '👁️' },
-    { id: 'customers',  label: '客戶管理',      icon: '👤' },
-    { id: 'change-password', label: '修改密碼',      icon: '🔑' }
+    { id: 'dashboard', label: '儀表板 (唯讀)', icon: '👁️' },
+    { id: 'orders', label: '訂單管理', icon: '🛍️' },
+    { id: 'customers', label: '客戶管理', icon: '👤' },
+    { id: 'change-password', label: '修改密碼', icon: '🔑' }
   ]
 };
 
@@ -91,9 +92,9 @@ export function canChangeRole(users, currentUser, targetUser, newRole) {
 // ── 訂單 ──
 
 export function canViewOrder(user, order) {
-  if (user?.role === 'admin') return true;
+  if (user?.role === 'admin' || user?.role === 'viewer') return true;
   if (user?.role === 'sales') return order?.ownerId === user?.employeeId;
-  return false; // viewer 無訂單存取權
+  return false;
 }
 
 export function canEditOrder(user, order) {
@@ -104,6 +105,12 @@ export function canEditOrder(user, order) {
 
 export function canVoidOrder(user) {
   return user.role === 'admin';
+}
+
+export function canCompleteOrder(user, order) {
+  if (user?.role === 'admin') return true;
+  if (user?.role === 'sales') return order?.ownerId === user?.employeeId;
+  return false;
 }
 
 export function canCreateOrder(user) {

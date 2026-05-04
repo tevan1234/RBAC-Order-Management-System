@@ -4,7 +4,7 @@
 
 import {
   canAccessMenu, getMenuItems, isAdmin,
-  canEditOrder, canVoidOrder, canCreateOrder,
+  canEditOrder, canVoidOrder, canCompleteOrder, canCreateOrder,
   canEditCustomer, canVoidCustomer, canCreateCustomer,
   canEditUser, canDeactivateUser, validateLastAdmin, canChangeRole
 } from './rbac.js';
@@ -438,6 +438,9 @@ function updateOrderOverview(orders) {
 
 function loadSectionData(sectionId) {
   switch (sectionId) {
+    case 'dashboard':
+      updateDashboardStats();
+      break;
     case 'orders': 
       ordersPage = 1; // 切換 Section 時重設分頁
       renderOrdersTable(); 
@@ -460,6 +463,22 @@ function loadSectionData(sectionId) {
       break;
     case 'change-password': renderChangePasswordSection(); break;
   }
+}
+
+// 儀表板數據動態化
+function updateDashboardStats() {
+  const orders = getOrders();
+  const totalOrders = orders.length;
+  const totalAmount = orders.reduce((sum, o) => sum + (Number(o.amount) || 0), 0);
+  const pendingOrders = orders.filter(o => o.status === '處理中').length;
+
+  const totalEl = document.getElementById('dbTotalOrders');
+  const amountEl = document.getElementById('dbTotalAmount');
+  const pendingEl = document.getElementById('dbPendingOrders');
+
+  if (totalEl) totalEl.textContent = totalOrders.toLocaleString();
+  if (amountEl) amountEl.textContent = `$${totalAmount.toLocaleString()}`;
+  if (pendingEl) pendingEl.textContent = pendingOrders.toLocaleString();
 }
 
 // ============================================================
@@ -503,6 +522,16 @@ function renderOrdersTable() {
   const start = (ordersPage - 1) * PAGE_SIZE;
   const pagedOrders = orders.slice(start, start + PAGE_SIZE);
 
+  const showActions = canEditOrder(currentUser, { ownerId: currentUser.employeeId }) || canVoidOrder(currentUser) || canCompleteOrder(currentUser, { ownerId: currentUser.employeeId });
+  const thead = document.querySelector('#section-orders .data-table thead tr');
+  const actionTh = thead ? thead.querySelector('th:last-child') : null;
+
+  if (showActions) {
+    if (actionTh) actionTh.style.display = '';
+  } else {
+    if (actionTh) actionTh.style.display = 'none';
+  }
+
   tbody.innerHTML = pagedOrders.map(order => {
     const statusClass = order.status === '已完成' ? 'badge-success' : (order.status === '處理中' ? 'badge-info' : 'badge-void');
     const product = defaultProducts.find(p => p.productId === order.productId);
@@ -511,9 +540,14 @@ function renderOrdersTable() {
     const ownerName = ownerUser ? ownerUser.name : order.ownerId;
 
     let actionsHtml = '';
-    if (order.status !== '已作廢') {
+    const isFinalized = order.status === '已完成' || order.status === '已作廢';
+
+    if (!isFinalized) {
       if (canEditOrder(currentUser, order)) {
         actionsHtml += `<button class="btn-secondary btn-edit-order" data-id="${order.id}">編輯</button>`;
+      }
+      if (canCompleteOrder(currentUser, order)) {
+        actionsHtml += `<button class="btn-success btn-complete-order" data-id="${order.id}">完成</button>`;
       }
       if (canVoidOrder(currentUser)) {
         actionsHtml += `<button class="btn-danger btn-void-order" data-id="${order.id}">作廢</button>`;
@@ -545,7 +579,7 @@ function renderOrdersTable() {
         <td>$${Number(order.amount).toLocaleString()}</td>
         <td><div class="status-wrapper"><span class="badge ${statusClass}">${order.status}</span></div></td>
         <td class="badge-cell"><span class="badge badge-viewer">${ownerName}</span></td>
-        <td class="actions-cell"><div class="actions-wrapper">${actionsHtml || '<span>—</span>'}</div></td>
+        ${showActions ? `<td class="actions-cell"><div class="actions-wrapper">${actionsHtml || '<span>—</span>'}</div></td>` : ''}
       </tr>
     `;
   }).join('');
@@ -557,6 +591,11 @@ function renderOrdersTable() {
   tbody.querySelectorAll('.btn-void-order').forEach(btn => {
     btn.addEventListener('click', async () => {
       await voidOrder(btn.dataset.id);
+    });
+  });
+  tbody.querySelectorAll('.btn-complete-order').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      await completeOrder(btn.dataset.id);
     });
   });
 
@@ -701,6 +740,28 @@ async function voidOrder(id) {
   showNotification('訂單已成功作廢', 'success');
 }
 
+async function completeOrder(id) {
+  const allOrders = getOrders();
+  const order = allOrders.find(o => o.id === id);
+  if (!order) return;
+
+  if (!canCompleteOrder(currentUser, order)) {
+    showNotification('無權限完成此訂單', 'error');
+    return;
+  }
+
+  const confirmed = await showConfirm('確定要將此訂單標記為「已完成」嗎？結案後將無法再修改。', '完成訂單確認');
+  if (!confirmed) return;
+
+  order.status = '已完成';
+  order.updatedAt = new Date().toISOString();
+
+  saveOrders(allOrders);
+  addLog('COMPLETE_ORDER', id, currentUser);
+  renderOrdersTable();
+  showNotification('訂單已成功結案', 'success');
+}
+
 // ============================================================
 // Customers
 // ============================================================
@@ -735,11 +796,9 @@ function renderCustomersTable() {
   // 處理 Header
   const actionTh = thead.querySelector('th:last-child');
   if (showActions) {
-    if (actionTh && actionTh.textContent !== '操作') {
-      // 避免重複添加，但原本就有操作的話通常不需要處理
-    }
+    if (actionTh) actionTh.style.display = '';
   } else {
-    if (actionTh && actionTh.textContent === '操作') actionTh.remove();
+    if (actionTh) actionTh.style.display = 'none';
   }
 
   const total = customers.length;
@@ -976,8 +1035,6 @@ function openUserModal(employeeId = null) {
     title.textContent = '編輯使用者';
     idInput.value = u.employeeId;
     idInput.dataset.mode = 'edit';
-    nameInput.value = u.name;
-    emailInput.value = u.email;
     setDropdownValue('userRoleDropdown', u.role);
   } else {
     // 新增模式
@@ -989,6 +1046,18 @@ function openUserModal(employeeId = null) {
     nameInput.value = '';
     emailInput.value = `${newEmployeeId}@test.com`;
     setDropdownValue('userRoleDropdown', 'viewer');
+  }
+
+  // Self-Edit 限制：不可改自己角色
+  const roleDropdown = document.getElementById('userRoleDropdown');
+  if (employeeId === currentUser.employeeId) {
+    roleDropdown.classList.add('disabled');
+    roleDropdown.style.pointerEvents = 'none';
+    roleDropdown.style.opacity = '0.6';
+  } else {
+    roleDropdown.classList.remove('disabled');
+    roleDropdown.style.pointerEvents = '';
+    roleDropdown.style.opacity = '';
   }
 
   modal.classList.add('active');
@@ -1041,6 +1110,7 @@ function saveUser() {
     });
     saveUsers(users);
     addLog('CREATE_USER', employeeId, currentUser);
+    showNotification(`使用者 ${name} 已成功建立！預設密碼為：test123`, 'success', 8000);
   }
 
   closeUserModal();
@@ -1174,12 +1244,20 @@ function bindEvents() {
     });
   });
 
-  // 初始化搜尋 Dropdowns
   initDropdown('orderFieldDropdown', (val) => {
     orderSearch.field = val;
     ordersPage = 1;
     renderOrdersTable();
   });
+
+  // 針對 Sales/Viewer 隱藏 ownerName 搜尋選項
+  if (currentUser.role !== 'admin') {
+    const orderOwnerItem = document.querySelector('#orderFieldDropdown .dropdown-item[data-value="ownerName"]');
+    const customerOwnerItem = document.querySelector('#customerFieldDropdown .dropdown-item[data-value="ownerName"]');
+    if (orderOwnerItem) orderOwnerItem.remove();
+    if (customerOwnerItem) customerOwnerItem.remove();
+  }
+
   initDropdown('customerFieldDropdown', (val) => {
     customerSearch.field = val;
     customersPage = 1;

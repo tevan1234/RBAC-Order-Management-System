@@ -57,15 +57,15 @@
                     <div class="stats-grid">
                         <div class="stat-card">
                             <div class="stat-label">總訂單數</div>
-                            <div class="stat-value">1,284</div>
+                            <div class="stat-value" id="dbTotalOrders">0</div>
                         </div>
                         <div class="stat-card">
-                            <div class="stat-label">本月營收</div>
-                            <div class="stat-value">$42,500</div>
+                            <div class="stat-label">總金額總和</div>
+                            <div class="stat-value" id="dbTotalAmount">$0</div>
                         </div>
                         <div class="stat-card">
-                            <div class="stat-label">待處理項目</div>
-                            <div class="stat-value">12</div>
+                            <div class="stat-label">處理中訂單數</div>
+                            <div class="stat-value" id="dbPendingOrders">0</div>
                         </div>
                     </div>
 
@@ -138,7 +138,7 @@
                     </div>
                     <div class="table-container">
                         <table class="data-table">
-                            <thead>
+                            <thead style="text-align: center;">
                                 <tr>
                                     <th>訂單編號</th>
                                     <th>客戶名稱</th>
@@ -181,7 +181,7 @@
                     </div>
                     <div class="table-container">
                         <table class="data-table">
-                            <thead>
+                            <thead style="text-align: center;">
                                 <tr>
                                     <th>客戶編號</th>
                                     <th>客戶名稱</th>
@@ -223,7 +223,7 @@
                     </div>
                     <div class="table-container">
                         <table class="data-table">
-                            <thead>
+                            <thead style="text-align: center;">
                                 <tr>
                                     <th>員工編號</th>
                                     <th>姓名</th>
@@ -269,7 +269,7 @@
                     </div>
                     <div class="table-container">
                         <table class="data-table">
-                            <thead>
+                            <thead style="text-align: center;">
                                 <tr>
                                     <th>Log ID</th>
                                     <th>操作類型</th>

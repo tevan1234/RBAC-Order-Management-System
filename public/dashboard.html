@@ -286,31 +286,65 @@
                     <div id="auditLogsPaginator" class="paginator"></div>
                 </section>
 
-                <!-- Change Password Section -->
+                <!-- Change Password Section (Account Settings) -->
+                <!-- Change Password Section (Account Settings Overhaul) -->
                 <section id="section-change-password" class="section-content centered-flex">
-                    <div class="section-header"
-                        style="display: flex; flex-direction: column; align-items: center; text-align: center; margin-bottom: 32px; gap: 8px;">
-                        <h2>安全中心：修改密碼</h2>
-                        <p class="hint-text">建議定期更換密碼以保護帳號安全</p>
+                    <div class="section-header" style="margin-bottom: 32px; text-align: center;">
+                        <h2 style="font-size: 24px; font-weight: 800; color: var(--text-main); margin-bottom: 8px;">帳戶設定</h2>
+                        <p class="hint-text">管理您的個人資訊與帳號安全</p>
                     </div>
+
                     <div class="form-card glass">
-                        <form id="changePasswordForm" autocomplete="off">
-                            <div class="form-group">
-                                <label for="currentPassword">目前密碼</label>
-                                <input type="password" id="currentPassword" placeholder="請輸入目前密碼" required>
+                        <form id="accountSettingsForm" autocomplete="off">
+                            <!-- 個人資訊區塊 (所有角色皆可見基本資料，Admin 不可編輯 Email) -->
+                            <div id="profileFields">
+                                <h3 class="form-section-title">👤 個人資訊</h3>
+                                <div class="form-group">
+                                    <label>員工編號</label>
+                                    <div class="readonly-input-wrapper">
+                                        <input type="text" id="accEmployeeId" readonly>
+                                        <span class="lock-icon">🔒</span>
+                                    </div>
+                                </div>
+                                <div class="form-group">
+                                    <label>姓名</label>
+                                    <div class="readonly-input-wrapper">
+                                        <input type="text" id="accName" readonly>
+                                        <span class="lock-icon">🔒</span>
+                                    </div>
+                                </div>
+                                 <div class="form-group">
+                                    <label for="accEmail">Email</label>
+                                    <div id="accEmailWrapper" class="readonly-input-wrapper">
+                                        <input type="email" id="accEmail" placeholder="example@test.com" required>
+                                        <span id="accEmailLock" class="lock-icon" style="display: none;">🔒</span>
+                                    </div>
+                                </div>
                             </div>
-                            <div class="form-group">
-                                <label for="newPassword">新密碼</label>
-                                <input type="password" id="newPassword" placeholder="請輸入新密碼（至少 6 碼）" required
-                                    minlength="6">
+
+                            <div class="form-section-divider"></div>
+
+                            <!-- 安全中心區塊 -->
+                            <div id="passwordFields">
+                                <h3 class="form-section-title">🛡️ 安全中心</h3>
+                                <div class="form-group">
+                                    <label for="accCurrentPassword">目前密碼</label>
+                                    <input type="password" id="accCurrentPassword" placeholder="填寫此項以進行安全驗證">
+                                </div>
+                                <div class="form-group">
+                                    <label for="accNewPassword">新密碼</label>
+                                    <input type="password" id="accNewPassword" placeholder="若不修改請留空" minlength="6">
+                                </div>
+                                <div class="form-group">
+                                    <label for="accConfirmPassword">確認新密碼</label>
+                                    <input type="password" id="accConfirmPassword" placeholder="再次輸入新密碼" minlength="6">
+                                </div>
                             </div>
-                            <div class="form-group">
-                                <label for="confirmPassword">確認新密碼</label>
-                                <input type="password" id="confirmPassword" placeholder="請再次輸入新密碼" required
-                                    minlength="6">
-                            </div>
-                            <div class="form-actions">
-                                <button type="submit" class="btn-primary">儲存變更</button>
+
+                            <div style="margin-top: 32px;">
+                                <button type="submit" class="btn-primary" style="width: 100%; padding: 14px; font-weight: 700;">
+                                    儲存所有變更
+                                </button>
                             </div>
                         </form>
                     </div>

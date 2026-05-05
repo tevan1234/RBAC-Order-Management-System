@@ -33,9 +33,10 @@ function handleLogin(event) {
   // 建立 session
   const sessionInfo = {
     employeeId: user.employeeId,
+    email: user.email, // 新增此屬性
     role: user.role,
     name: user.name,
-    mustChangePassword: user.mustChangePassword, // 新增此屬性
+    mustChangePassword: user.mustChangePassword,
     loginAt: new Date().toISOString()
   };
 

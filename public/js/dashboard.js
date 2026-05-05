@@ -6,14 +6,15 @@ import {
   canAccessMenu, getMenuItems, isAdmin,
   canEditOrder, canVoidOrder, canCompleteOrder, canCreateOrder,
   canEditCustomer, canVoidCustomer, canCreateCustomer,
-  canEditUser, canDeactivateUser, validateLastAdmin, canChangeRole
+  canEditUser, canDeactivateUser, validateLastAdmin, canChangeRole,
+  canEditOtherUser
 } from './rbac.js';
 
 import {
   initData, getCurrentUser, clearCurrentUser,
   getOrders, getVisibleOrders, saveOrders,
   getCustomers, getVisibleCustomers, saveCustomers,
-  getUsers, saveUsers,
+  getUsers, saveUsers, setCurrentUser,
   getLogs, defaultProducts
 } from './data.js';
 
@@ -199,7 +200,7 @@ function initDropdown(dropdownId, onChange) {
       item.classList.add('active');
       labelEl.textContent = item.textContent;
       dropdown.dataset.value = item.dataset.value;
-      
+
       // 同時更新隱藏的 input (如有)
       const hiddenInput = dropdown.querySelector('input[type="hidden"]');
       if (hiddenInput) hiddenInput.value = item.dataset.value;
@@ -313,8 +314,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // UI 初始化
 // ============================================================
 
-function initUI() {
-  // Topbar
+function updateHeaderUI() {
   const displayIdEl = document.getElementById('displayEmployeeId');
   const welcomeUserEl = document.getElementById('welcomeUserName');
   if (displayIdEl) displayIdEl.textContent = currentUser.name || currentUser.employeeId;
@@ -326,6 +326,11 @@ function initUI() {
     const displayRole = currentUser.role.charAt(0).toUpperCase() + currentUser.role.slice(1);
     badgeContainer.innerHTML = `<span class="badge badge-${currentUser.role}">${displayRole}</span>`;
   }
+}
+
+function initUI() {
+  // Topbar & User Info
+  updateHeaderUI();
 
   // Sidebar
   renderSidebar();
@@ -369,7 +374,7 @@ function navigateTo(sectionId) {
     const target = document.getElementById(`section-${sectionId}`);
     if (target) {
       target.classList.add('active');
-      
+
       // GSAP Animation for Change Password
       if (sectionId === 'change-password') {
         gsap.fromTo(target.querySelector('.form-card'),
@@ -412,7 +417,7 @@ function updateOrderOverview(orders) {
   const pending = orders.filter(o => o.status === '處理中').length;
   const done = orders.filter(o => o.status === '已完成').length;
   const voidCount = orders.filter(o => o.status === '已作廢').length;
-  
+
   const rate = total > 0 ? Math.round((done / total) * 100) : 0;
 
   // 更新總筆數
@@ -441,27 +446,27 @@ function loadSectionData(sectionId) {
     case 'dashboard':
       updateDashboardStats();
       break;
-    case 'orders': 
+    case 'orders':
       ordersPage = 1; // 切換 Section 時重設分頁
-      renderOrdersTable(); 
+      renderOrdersTable();
       break;
-    case 'customers': 
+    case 'customers':
       customersPage = 1;
-      renderCustomersTable(); 
+      renderCustomersTable();
       break;
-    case 'users': 
+    case 'users':
       if (isAdmin(currentUser)) {
         usersPage = 1;
-        renderUsersTable(); 
+        renderUsersTable();
       }
       break;
-    case 'auditlogs': 
+    case 'auditlogs':
       if (isAdmin(currentUser)) {
         logsPage = 1;
-        renderAuditLogsTable(); 
+        renderAuditLogsTable();
       }
       break;
-    case 'change-password': renderChangePasswordSection(); break;
+    case 'change-password': renderAccountSettings(); break;
   }
 }
 
@@ -649,7 +654,7 @@ function openOrderModal(orderId = null) {
     title.textContent = '編輯訂單';
     idInput.value = order.id;
     amountInput.value = order.amount;
-    
+
     // 設定 Dropdown 預設值
     setDropdownValue('orderProductDropdown', order.productId);
     setDropdownValue('orderCustomerDropdown', order.customer);
@@ -658,12 +663,12 @@ function openOrderModal(orderId = null) {
     title.textContent = '新增訂單';
     idInput.value = '';
     amountInput.value = '';
-    
+
     // 重置 Dropdown
     const productLabel = document.querySelector('#orderProductDropdown .dropdown-label');
     productLabel.textContent = '請選擇商品';
     document.getElementById('orderProductDropdown').dataset.value = '';
-    
+
     customerLabel.textContent = '請選擇客戶';
     customerLabel.style.color = '#9CA3AF';
     document.getElementById('orderCustomerDropdown').dataset.value = '';
@@ -723,7 +728,7 @@ function saveOrder() {
 
 async function voidOrder(id) {
   if (!canVoidOrder(currentUser)) { showNotification('無權限操作：僅管理員可作廢訂單', 'error'); return; }
-  
+
   const confirmed = await showConfirm('確定要作廢此訂單嗎？作廢後將無法修改。', '作廢訂單確認');
   if (!confirmed) return;
 
@@ -925,7 +930,7 @@ function saveCustomer() {
 
 async function voidCustomer(id) {
   if (!canVoidCustomer(currentUser)) { showNotification('無權限操作：僅管理員可作廢客戶', 'error'); return; }
-  
+
   const confirmed = await showConfirm('確定要作廢此客戶嗎？作廢後狀態將轉為 inactive。', '作廢客戶確認');
   if (!confirmed) return;
 
@@ -977,13 +982,19 @@ function renderUsersTable() {
     else if (u.role === 'sales') roleBadgeClass = 'badge-sales';
 
     let actionsHtml = '';
+    const isSelf = u.employeeId === currentUser.employeeId;
+
     if (status !== 'inactive') {
-      if (canEditUser(currentUser)) {
+      if (!isSelf && canEditOtherUser(currentUser, u)) {
         actionsHtml += `<button class="btn-secondary btn-edit-user" data-id="${u.employeeId}">編輯</button>`;
       }
-      if (canDeactivateUser(currentUser, u)) {
+      if (!isSelf && canDeactivateUser(currentUser, u) && u.status !== 'inactive') {
         actionsHtml += `<button class="btn-danger btn-void-user" data-id="${u.employeeId}">停用</button>`;
       }
+    }
+
+    if (isSelf) {
+      actionsHtml = '<span>—</span>';
     }
 
     return `
@@ -1035,6 +1046,10 @@ function openUserModal(employeeId = null) {
     title.textContent = '編輯使用者';
     idInput.value = u.employeeId;
     idInput.dataset.mode = 'edit';
+    nameInput.value = u.name || '';
+    emailInput.value = u.email || '';
+    emailInput.readOnly = false;
+    emailInput.style.backgroundColor = '';
     setDropdownValue('userRoleDropdown', u.role);
   } else {
     // 新增模式
@@ -1045,6 +1060,8 @@ function openUserModal(employeeId = null) {
     idInput.dataset.mode = 'create';
     nameInput.value = '';
     emailInput.value = `${newEmployeeId}@test.com`;
+    emailInput.readOnly = true;
+    emailInput.style.backgroundColor = '#F3F4F6';
     setDropdownValue('userRoleDropdown', 'viewer');
   }
 
@@ -1084,16 +1101,23 @@ function saveUser() {
   if (isEdit) {
     const index = users.findIndex(u => u.employeeId === employeeId);
     if (index > -1) {
+      // Action-Level 保護：不允許透過 API 繞過 UI 限制
+      const target = users[index];
+      if (!canEditOtherUser(currentUser, target)) {
+        showNotification('無法編輯自己的資料', 'error');
+        return;
+      }
+
       // 角色變更保護：不可改自己角色 + 最後 admin 保護
-      const roleCheck = canChangeRole(users, currentUser, users[index], role);
+      const roleCheck = canChangeRole(users, currentUser, target, role);
       if (!roleCheck.allowed) {
         showNotification(roleCheck.reason, 'error');
         return;
       }
 
-      users[index].name = name;
-      users[index].email = email;
-      users[index].role = role;
+      target.name = name;
+      target.email = email;
+      target.role = role;
       saveUsers(users);
       addLog('UPDATE_USER', employeeId, currentUser);
     }
@@ -1362,51 +1386,111 @@ function bindEvents() {
 }
 
 // ============================================================
-// Change Password
+// Account Settings
 // ============================================================
 
-function renderChangePasswordSection() {
-  const form = document.getElementById('changePasswordForm');
+function renderAccountSettings() {
+  const form = document.getElementById('accountSettingsForm');
   if (!form) return;
 
-  // 避免重複綁定
-  form.onsubmit = null;
-  form.onsubmit = (e) => {
+  const emailInput = document.getElementById('accEmail');
+  const nameInput = document.getElementById('accName');
+  const idInput = document.getElementById('accEmployeeId');
+
+  // 資料初始化 (Data Infilling)
+  idInput.value = currentUser.employeeId;
+  nameInput.value = currentUser.name || '';
+  emailInput.value = currentUser.email || '';
+
+  // 權限欄位控制 (Role-Based Field Control)
+  const emailWrapper = document.getElementById('accEmailWrapper');
+  const emailLock = document.getElementById('accEmailLock');
+
+  if (isAdmin(currentUser)) {
+    // Admin: 三個欄位皆唯讀
+    emailInput.readOnly = true;
+    emailWrapper.classList.add('readonly-input-wrapper'); // 確保有灰色背景
+    emailLock.style.display = 'block';
+  } else {
+    // Sales / Viewer: 僅 ID, Name 唯讀，Email 可編輯
+    emailInput.readOnly = false;
+    emailWrapper.classList.remove('readonly-input-wrapper'); // 移除灰色背景
+    emailLock.style.display = 'none';
+  }
+
+  form.onsubmit = async (e) => {
     e.preventDefault();
 
-    const currentPassword = document.getElementById('currentPassword').value;
-    const newPassword = document.getElementById('newPassword').value;
-    const confirmPassword = document.getElementById('confirmPassword').value;
+    const newEmail = emailInput.value.trim();
+    const currentPwd = document.getElementById('accCurrentPassword').value;
+    const newPwd = document.getElementById('accNewPassword').value;
+    const confirmPwd = document.getElementById('accConfirmPassword').value;
 
-    if (newPassword !== confirmPassword) {
-      showNotification('兩次輸入的密碼不一致', 'error');
-      return;
-    }
-
-    if (newPassword.length < 6) {
-      showNotification('密碼長度至少需要 6 個字元', 'error');
+    if (!newEmail) {
+      showNotification('Email 不可為空', 'warning');
       return;
     }
 
     const users = getUsers();
-    const index = users.findIndex(u => u.employeeId === currentUser.employeeId);
+    const userIndex = users.findIndex(u => u.employeeId === currentUser.employeeId);
+    if (userIndex === -1) return;
 
-    if (index === -1) {
-      showNotification('找不到使用者資料，請重新登入', 'error');
+    let isProfileUpdated = false;
+    let isPasswordUpdated = false;
+
+    // 1. 檢查基本資料是否有變動
+    if (newEmail !== currentUser.email) {
+      users[userIndex].email = newEmail;
+      currentUser.email = newEmail;
+      isProfileUpdated = true;
+    }
+
+    // 2. 檢查密碼更新邏輯 (若有填寫新密碼)
+    if (newPwd || confirmPwd || currentPwd) {
+      if (!currentPwd) {
+        showNotification('請輸入目前密碼以進行驗證', 'warning');
+        return;
+      }
+      if (users[userIndex].password !== currentPwd) {
+        showNotification('目前密碼錯誤', 'error');
+        return;
+      }
+      if (newPwd !== confirmPwd) {
+        showNotification('兩次輸入的新密碼不一致', 'error');
+        return;
+      }
+      if (newPwd.length < 6) {
+        showNotification('新密碼長度至少需 6 個字元', 'error');
+        return;
+      }
+
+      users[userIndex].password = newPwd;
+      users[userIndex].mustChangePassword = false;
+      isPasswordUpdated = true;
+    }
+
+    if (!isProfileUpdated && !isPasswordUpdated) {
+      showNotification('資料無變動', 'info');
       return;
     }
 
-    if (users[index].password !== currentPassword) {
-      showNotification('目前密碼輸入錯誤', 'error');
-      return;
-    }
-
-    users[index].password = newPassword;
-    users[index].mustChangePassword = false;
+    // 儲存變更
     saveUsers(users);
+    setCurrentUser(currentUser);
 
-    addLog('CHANGE_PASSWORD', currentUser.employeeId, currentUser);
+    // 紀錄日誌
+    if (isProfileUpdated) addLog('UPDATE_PROFILE', currentUser.employeeId, currentUser);
+    if (isPasswordUpdated) addLog('CHANGE_PASSWORD', currentUser.employeeId, currentUser);
+
+    // 同步 UI
+    updateHeaderUI();
     form.reset();
-    showNotification('密碼已成功更新', 'success');
+    
+    // 重新填入基本資料 (因為 reset 會清空)
+    idInput.value = currentUser.employeeId;
+    nameInput.value = currentUser.name || '';
+    emailInput.value = currentUser.email || '';
+
+    showNotification('帳戶設定已成功更新', 'success');
   };
 }

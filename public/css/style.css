@@ -432,14 +432,14 @@ body {
     cursor: pointer;
 }
 
-/* Centered Layout Support */
+/* Centered Layout Support - 修正溢出問題 */
 .section-content.centered-flex {
     display: none;
-    height: 100%;
+    width: 100%;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    min-height: 400px;
+    padding: 40px 20px;
+    overflow-y: auto;
 }
 
 .section-content.centered-flex.active {
@@ -448,21 +448,67 @@ body {
 
 /* Glassmorphism for Centered Cards */
 .form-card.glass {
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0.7) 100%);
-    backdrop-filter: blur(20px);
-    border: 1px solid rgba(255, 255, 255, 0.4);
-    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15), 0 0 20px rgba(79, 70, 229, 0.1);
+    background: rgba(255, 255, 255, 0.85);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid rgba(255, 255, 255, 0.5);
+    box-shadow: 0 20px 40px -10px rgba(79, 70, 229, 0.12), 0 0 15px rgba(0, 0, 0, 0.03);
     margin: 0 auto;
     border-radius: 24px;
     position: relative;
-    overflow: hidden;
+    overflow: visible; /* 允許提示訊息彈出 */
+    width: 100%;
+    max-width: 500px;
+    padding: 40px;
 }
 
 .form-card.glass::before {
     content: '';
     position: absolute;
-    top: 0; left: 0; right: 0; height: 4px;
-    background: linear-gradient(90deg, var(--primary-color), var(--accent-color));
+    top: 0; left: 0; right: 0; height: 6px;
+    background: linear-gradient(90deg, #6366F1, #A855F7);
+    border-radius: 24px 24px 0 0;
+}
+
+.form-section-divider {
+    margin: 32px 0 24px;
+    border-bottom: 1px solid #E5E7EB;
+    position: relative;
+}
+
+.form-section-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-main);
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.readonly-input-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.readonly-input-wrapper input {
+    background-color: #F3F4F6 !important;
+    color: #6B7280;
+    cursor: not-allowed;
+    padding-right: 40px !important;
+}
+
+.lock-icon {
+    position: absolute;
+    right: 14px;
+    font-size: 14px;
+    opacity: 0.5;
+}
+
+.form-group input:focus {
+    border-color: #A855F7;
+    box-shadow: 0 0 0 4px rgba(168, 85, 247, 0.15);
 }
 
 /* Main Container */

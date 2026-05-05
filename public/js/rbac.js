@@ -10,19 +10,19 @@ export const menuConfig = {
     { id: 'customers', label: '客戶管理', icon: '👤' },
     { id: 'users', label: '使用者管理', icon: '👥' },
     { id: 'auditlogs', label: '操作紀錄', icon: '📝' },
-    { id: 'change-password', label: '修改密碼', icon: '🔑' }
+    { id: 'change-password', label: '帳戶設定', icon: '⚙️' }
   ],
   sales: [
     { id: 'dashboard', label: '儀表板', icon: '📊' },
     { id: 'orders', label: '訂單管理', icon: '🛍️' },
     { id: 'customers', label: '客戶管理', icon: '👤' },
-    { id: 'change-password', label: '修改密碼', icon: '🔑' }
+    { id: 'change-password', label: '帳戶設定', icon: '⚙️' }
   ],
   viewer: [
     { id: 'dashboard', label: '儀表板 (唯讀)', icon: '👁️' },
     { id: 'orders', label: '訂單管理', icon: '🛍️' },
     { id: 'customers', label: '客戶管理', icon: '👤' },
-    { id: 'change-password', label: '修改密碼', icon: '🔑' }
+    { id: 'change-password', label: '帳戶設定', icon: '⚙️' }
   ]
 };
 
@@ -51,6 +51,13 @@ export function getMenuItems(role) {
 
 export function canEditUser(currentUser) {
   return currentUser?.role === 'admin';
+}
+
+export function canEditOtherUser(currentUser, targetUser) {
+  if (currentUser?.role !== 'admin') return false;
+  // 自己不能編輯自己（透過此頁面），避免繞過 role 保護
+  if (currentUser?.employeeId === targetUser?.employeeId) return false;
+  return true;
 }
 
 export function canDeactivateUser(currentUser, targetUser) {

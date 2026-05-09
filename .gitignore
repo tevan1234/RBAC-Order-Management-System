@@ -3,15 +3,19 @@ node_modules/
 .DS_Store
 .env
 
-# Backend
-order-management-backend/scratch/
-order-management-backend/tests/__pycache__/
-order-management-backend/__pycache__/
-order-management-backend/.venv/
-order-management-backend/.env
-order-management-backend/.pytest_cache/
+# Python/Backend
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.pytest_cache/
+.venv/
+.env
 
-# Frontend (New structure)
+# Backend Specific
+order-management-backend/scratch/
+
+# Frontend Specific
 order-management-frontend/node_modules/
 order-management-frontend/.env
 order-management-frontend/.DS_Store

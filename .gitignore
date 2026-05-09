@@ -1,3 +1,17 @@
+# Root/Frontend (Old structure compatibility)
 node_modules/
 .DS_Store
 .env
+
+# Backend
+order-management-backend/scratch/
+order-management-backend/tests/__pycache__/
+order-management-backend/__pycache__/
+order-management-backend/.venv/
+order-management-backend/.env
+order-management-backend/.pytest_cache/
+
+# Frontend (New structure)
+order-management-frontend/node_modules/
+order-management-frontend/.env
+order-management-frontend/.DS_Store

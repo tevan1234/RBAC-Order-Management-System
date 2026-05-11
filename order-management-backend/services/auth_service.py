@@ -1,5 +1,5 @@
 from fastapi import Header, HTTPException, Depends
-from services.supabase_client import get_supabase
+from services.supabase_client import get_supabase, get_supabase_admin
 import time
 
 # 簡單的記憶體緩存 (方案 B: 60秒 TTL)
@@ -68,29 +68,44 @@ async def require_sales_or_admin(user: dict = Depends(get_current_user)):
 
 class AuthService:
     @staticmethod
-    async def change_password(user_id: str, current_password: str, new_password: str):
+    async def change_password(user_id: str, email: str, current_password: str, new_password: str):
         """修改使用者密碼"""
         supabase = get_supabase()
-        # 由於後端是用 Service Role，這類敏感操作需要謹慎
-        # Supabase Admin API 允許直接更新使用者，但我們應先驗證舊密碼（邏輯略）
-        res = supabase.auth.admin.update_user_by_id(
+        admin_supabase = get_supabase_admin()
+        
+        # 1. 驗證舊密碼 (嘗試登入)
+        try:
+            auth_res = supabase.auth.sign_in_with_password({
+                "email": email,
+                "password": current_password
+            })
+            if not auth_res.session:
+                raise Exception("目前密碼不正確")
+        except Exception:
+            raise Exception("目前密碼不正確")
+
+        # 2. 使用 Admin 權限更新密碼
+        res = admin_supabase.auth.admin.update_user_by_id(
             user_id,
             {"password": new_password}
         )
         if not res.user:
             raise Exception("修改密碼失敗")
+        
+        # 同步更新 Profiles 表，取消強制更改密碼標記
+        admin_supabase.table("profiles").update({"must_change_password": False}).eq("id", user_id).execute()
         return True
 
     @staticmethod
     async def update_email(user_id: str, new_email: str):
         """更新使用者 Email"""
-        supabase = get_supabase()
-        res = supabase.auth.admin.update_user_by_id(
+        admin_supabase = get_supabase_admin()
+        res = admin_supabase.auth.admin.update_user_by_id(
             user_id,
             {"email": new_email}
         )
         if not res.user:
             raise Exception("更新 Email 失敗")
         # 同步更新 Profiles 表
-        supabase.table("profiles").update({"email": new_email}).eq("id", user_id).execute()
+        admin_supabase.table("profiles").update({"email": new_email}).eq("id", user_id).execute()
         return True

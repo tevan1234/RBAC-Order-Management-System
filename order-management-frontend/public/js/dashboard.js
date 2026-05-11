@@ -27,6 +27,13 @@ function initDashboard() {
   try {
     const p = sessionStorage.getItem('pendingNotification');
     if (p) { const n = JSON.parse(p); showNotification(n.message, n.type); sessionStorage.removeItem('pendingNotification'); }
+    
+    // 初次登入提醒
+    if (currentUser.must_change_password) {
+      setTimeout(() => {
+        showNotification('您是初次登入，請務必至「帳戶設定」修改預設密碼及信箱，以確保帳號安全。', 'warning', 10000);
+      }, 1000);
+    }
   } catch (e) { }
 }
 
@@ -405,9 +412,77 @@ function renderAuditLogsList() {
 
 // ── 帳戶設定 ──
 function renderAccountSettings() {
+  const accEmail = f('accEmail');
+  const accEmailLock = f('accEmailLock');
+  
   f('accEmployeeId').value = currentUser.employeeId || currentUser.employee_id || '';
   f('accName').value = currentUser.name || '-';
-  f('accEmail').value = currentUser.email || '-';
+  accEmail.value = currentUser.email || '-';
+
+  // 權限控制：sales, viewer 可編輯 Email，admin 不可
+  const role = (currentUser.role || 'viewer').toLowerCase();
+  if (role === 'admin') {
+    accEmail.readOnly = true;
+    accEmail.parentElement.classList.add('readonly-input-wrapper');
+    if (accEmailLock) accEmailLock.style.display = 'block';
+  } else {
+    accEmail.readOnly = false;
+    accEmail.parentElement.classList.remove('readonly-input-wrapper');
+    if (accEmailLock) accEmailLock.style.display = 'none';
+  }
+}
+
+async function saveAccountSettings(event) {
+  event.preventDefault();
+  const currentEmail = currentUser.email;
+  const newEmail = f('accEmail').value.trim();
+  const currentPassword = f('accCurrentPassword').value;
+  const newPassword = f('accNewPassword').value;
+  const confirmPassword = f('accConfirmPassword').value;
+
+  try {
+    let emailUpdated = false;
+    let passwordUpdated = false;
+
+    // 1. 處理 Email 更新
+    if (newEmail !== currentEmail) {
+      const { updateEmail } = await import('./auth.js');
+      await updateEmail(newEmail);
+      currentUser.email = newEmail;
+      emailUpdated = true;
+    }
+
+    // 2. 處理密碼更新
+    if (newPassword) {
+      if (newPassword !== confirmPassword) {
+        return showNotification('新密碼與確認密碼不符', 'warning');
+      }
+      if (!currentPassword) {
+        return showNotification('請輸入目前密碼以驗證身分', 'warning');
+      }
+      const { changePassword } = await import('./auth.js');
+      await changePassword(currentPassword, newPassword);
+      currentUser.must_change_password = false;
+      passwordUpdated = true;
+    }
+
+    if (!emailUpdated && !passwordUpdated) {
+      return showNotification('未偵測到任何變更', 'info');
+    }
+
+    // 更新本地存儲
+    localStorage.setItem('currentUser', JSON.stringify(currentUser));
+    updateHeaderUI();
+
+    // 清空密碼欄位
+    f('accCurrentPassword').value = '';
+    f('accNewPassword').value = '';
+    f('accConfirmPassword').value = '';
+
+    showNotification('帳戶設定已成功更新', 'success');
+  } catch (e) {
+    showNotification('更新失敗：' + e.message, 'error');
+  }
 }
 
 // ── 分頁元件 ──
@@ -446,6 +521,9 @@ function bindEvents() {
   f('cancelUserBtn')?.addEventListener('click', () => f('userModal')?.classList.remove('active'));
   f('cancelOrderBtn')?.addEventListener('click', () => f('orderModal')?.classList.remove('active'));
   f('cancelCustomerBtn')?.addEventListener('click', () => f('customerModal')?.classList.remove('active'));
+
+  // 帳戶設定表單
+  f('accountSettingsForm')?.addEventListener('submit', saveAccountSettings);
 
   // 搜尋與下拉連動
   initDropdown('orderFieldDropdown', v => { orderSearch.field = v; renderOrdersList(); });

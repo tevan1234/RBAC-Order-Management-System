@@ -42,7 +42,7 @@ async def login(req: LoginRequest):
         # 1. 根據 employee_id 查詢 email (使用 maybe_single 避免 PGRST116)
         profile_res = supabase.table("profiles").select("email, name, role, status, must_change_password").eq("employee_id", req.employee_id).maybe_single().execute()
         
-        if not profile_res.data:
+        if not profile_res or not hasattr(profile_res, 'data') or not profile_res.data:
             raise HTTPException(status_code=404, detail="員工代號不存在")
         
         if profile_res.data.get("status") == "inactive":
@@ -92,7 +92,8 @@ async def change_password(req: PasswordChangeRequest, user: dict = Depends(get_c
     """修改密碼"""
     try:
         # AuthService.change_password 實作在 services/auth_service.py
-        await AuthService.change_password(user["profile"]["id"], req.current_password, req.new_password)
+        await AuthService.change_password(user["profile"]["id"], user["email"], req.current_password, req.new_password)
+        await log_action(user["profile"]["employee_id"], "UPDATE_PASSWORD", "User updated their password")
         return {"message": "密碼已成功修改"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -102,6 +103,7 @@ async def update_email(req: EmailUpdateRequest, user: dict = Depends(get_current
     """更新 Email"""
     try:
         await AuthService.update_email(user["profile"]["id"], req.email)
+        await log_action(user["profile"]["employee_id"], "UPDATE_EMAIL", f"User updated their email to {req.email}")
         return {"message": "Email 已成功更新"}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))

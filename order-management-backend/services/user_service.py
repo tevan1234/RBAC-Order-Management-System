@@ -1,7 +1,7 @@
 from fastapi import HTTPException
 from typing import List, Optional, Dict, Any
 from uuid import UUID
-from services.supabase_client import get_supabase
+from services.supabase_client import get_supabase, get_supabase_admin
 from services import audit_service
 import asyncio
 from models.schemas import ProfileResponse, UserAdminCreate, UserUpdate
@@ -15,7 +15,7 @@ class UserService:
         - 帶入 metadata 以觸發資料庫 Trigger
         - 記錄審計日誌
         """
-        supabase = get_supabase()
+        supabase = get_supabase_admin()  # Admin 操作必須使用 service_role key
         operator_id = str(operator["profile"]["id"])
         
         # 0. 預先檢查 employee_id 是否已存在 (避免產生無效 Auth 帳號)
@@ -140,7 +140,7 @@ class UserService:
         - 僅限 admin (由 Router 確保角色)
         - 記錄審計日誌
         """
-        supabase = get_supabase()
+        supabase = get_supabase_admin()  # 刪除 Auth 使用者需要 service_role key
         
         # 1. 獲取用戶資訊以便記錄日誌
         profile_res = supabase.table("profiles").select("email, employee_id").eq("id", str(target_id)).single().execute()

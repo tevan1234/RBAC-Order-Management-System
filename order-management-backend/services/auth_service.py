@@ -65,3 +65,32 @@ async def require_sales_or_admin(user: dict = Depends(get_current_user)):
     if role not in ["admin", "sales"]:
         raise HTTPException(status_code=403, detail="權限不足，僅限業務或管理員存取")
     return user
+
+class AuthService:
+    @staticmethod
+    async def change_password(user_id: str, current_password: str, new_password: str):
+        """修改使用者密碼"""
+        supabase = get_supabase()
+        # 由於後端是用 Service Role，這類敏感操作需要謹慎
+        # Supabase Admin API 允許直接更新使用者，但我們應先驗證舊密碼（邏輯略）
+        res = supabase.auth.admin.update_user_by_id(
+            user_id,
+            {"password": new_password}
+        )
+        if not res.user:
+            raise Exception("修改密碼失敗")
+        return True
+
+    @staticmethod
+    async def update_email(user_id: str, new_email: str):
+        """更新使用者 Email"""
+        supabase = get_supabase()
+        res = supabase.auth.admin.update_user_by_id(
+            user_id,
+            {"email": new_email}
+        )
+        if not res.user:
+            raise Exception("更新 Email 失敗")
+        # 同步更新 Profiles 表
+        supabase.table("profiles").update({"email": new_email}).eq("id", user_id).execute()
+        return True

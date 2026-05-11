@@ -1,61 +1,99 @@
 // ============================================================
-// auth.js — 登入 / 登出 / Session (ES Module)
+// auth.js — 登入 / 登出 / 認證相關 API
 // ============================================================
 
-import { initData, getUsers, setCurrentUser } from './data.js';
+import { apiRequest } from './utils.js';
 
-// 初始化資料
-initData();
-
-// 登入處理
-function handleLogin(event) {
+/**
+ * 處理登入表單提交
+ */
+async function handleLogin(event) {
   event.preventDefault();
 
   const employeeId = document.getElementById('employeeId').value.trim();
-  const password   = document.getElementById('password').value;
+  const password = document.getElementById('password').value;
   const errorMessage = document.getElementById('errorMessage');
+  const loginButton = event.target.querySelector('button');
 
   errorMessage.textContent = '';
+  loginButton.disabled = true;
+  loginButton.textContent = '登入中...';
 
-  const users = getUsers();
-  const user  = users.find(u => u.employeeId === employeeId && u.password === password);
+  try {
+    const data = await apiRequest('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ employee_id: employeeId, password })
+    });
 
-  if (!user) {
-    errorMessage.textContent = '帳號或密碼錯誤';
-    return;
-  }
+    if (data && data.access_token) {
+      // 映射欄位名稱以相容原有前端邏輯
+      const userData = {
+        ...data.user,
+        employeeId: data.user.employee_id
+      };
+      
+      // 儲存認證資訊
+      localStorage.setItem('token', data.access_token);
+      localStorage.setItem('currentUser', JSON.stringify(userData));
 
-  if (user.status === 'inactive') {
-    errorMessage.textContent = '此帳號已被停用，請聯繫管理員';
-    return;
-  }
+      sessionStorage.setItem('pendingNotification', JSON.stringify({
+        message: `歡迎回來，${data.user.name || data.user.employee_id}！`,
+        type: 'success'
+      }));
 
-  // 建立 session
-  const sessionInfo = {
-    employeeId: user.employeeId,
-    email: user.email, // 新增此屬性
-    role: user.role,
-    name: user.name,
-    mustChangePassword: user.mustChangePassword,
-    loginAt: new Date().toISOString()
-  };
-
-  setCurrentUser(sessionInfo);
-
-  sessionStorage.setItem('pendingNotification', JSON.stringify({
-    message: `歡迎回來，${user.name || user.employeeId}！`,
-    type: 'success'
-  }));
-
-  // 首次登入強制變更密碼
-  if (user.mustChangePassword) {
-    window.location.href = 'dashboard.html?action=change-password';
-  } else {
-    window.location.href = 'dashboard.html';
+      // 檢查是否需要強制更改密碼
+      if (data.user.must_change_password) {
+        window.location.href = 'dashboard.html#change-password';
+      } else {
+        window.location.href = 'dashboard.html';
+      }
+    }
+  } catch (error) {
+    errorMessage.textContent = error.message || '登入失敗，請檢查帳號密碼';
+  } finally {
+    loginButton.disabled = false;
+    loginButton.textContent = '登入';
   }
 }
 
-// 頁面載入後執行
+/**
+ * 修改密碼
+ */
+export async function changePassword(currentPassword, newPassword) {
+  return await apiRequest('/auth/change-password', {
+    method: 'PATCH',
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword })
+  });
+}
+
+/**
+ * 更新 Email
+ */
+export async function updateEmail(newEmail) {
+  return await apiRequest('/auth/update-email', {
+    method: 'PATCH',
+    body: JSON.stringify({ email: newEmail })
+  });
+}
+
+/**
+ * 獲取目前登入使用者 (從 localStorage)
+ */
+export function getCurrentUser() {
+  const userJson = localStorage.getItem('currentUser');
+  return userJson ? JSON.parse(userJson) : null;
+}
+
+/**
+ * 登出
+ */
+export function logout() {
+  localStorage.removeItem('token');
+  localStorage.removeItem('currentUser');
+  window.location.href = 'index.html';
+}
+
+// 頁面載入後綁定登入事件
 document.addEventListener('DOMContentLoaded', () => {
   const loginForm = document.getElementById('loginForm');
   if (loginForm) {

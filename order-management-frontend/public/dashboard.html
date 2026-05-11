@@ -83,7 +83,7 @@
                     </div>
                     <!-- 搜尋列 -->
                     <div class="search-bar">
-                        <div class="custom-dropdown" id="orderFieldDropdown">
+                        <div class="custom-dropdown" id="orderFieldDropdown" data-value="id">
                             <button class="dropdown-trigger" type="button">
                                 <span class="dropdown-label">訂單編號</span>
                                 <span class="dropdown-arrow">▾</span>
@@ -165,7 +165,7 @@
                     </div>
                     <!-- 搜尋列 -->
                     <div class="search-bar">
-                        <div class="custom-dropdown" id="customerFieldDropdown">
+                        <div class="custom-dropdown" id="customerFieldDropdown" data-value="customerId">
                             <button class="dropdown-trigger" type="button">
                                 <span class="dropdown-label">客戶編號</span>
                                 <span class="dropdown-arrow">▾</span>
@@ -248,7 +248,7 @@
                     </div>
                     <!-- 搜尋列 -->
                     <div class="search-bar">
-                        <div class="custom-dropdown" id="auditFieldDropdown">
+                        <div class="custom-dropdown" id="auditFieldDropdown" data-value="action">
                             <button class="dropdown-trigger" type="button">
                                 <span class="dropdown-label">操作類型</span>
                                 <span class="dropdown-arrow">▾</span>
@@ -290,7 +290,8 @@
                 <!-- Change Password Section (Account Settings Overhaul) -->
                 <section id="section-change-password" class="section-content centered-flex">
                     <div class="section-header" style="margin-bottom: 32px; text-align: center;">
-                        <h2 style="font-size: 24px; font-weight: 800; color: var(--text-main); margin-bottom: 8px;">帳戶設定</h2>
+                        <h2 style="font-size: 24px; font-weight: 800; color: var(--text-main); margin-bottom: 8px;">帳戶設定
+                        </h2>
                         <p class="hint-text">管理您的個人資訊與帳號安全</p>
                     </div>
 
@@ -313,7 +314,7 @@
                                         <span class="lock-icon">🔒</span>
                                     </div>
                                 </div>
-                                 <div class="form-group">
+                                <div class="form-group">
                                     <label for="accEmail">Email</label>
                                     <div id="accEmailWrapper" class="readonly-input-wrapper">
                                         <input type="email" id="accEmail" placeholder="example@test.com" required>
@@ -342,7 +343,8 @@
                             </div>
 
                             <div style="margin-top: 32px;">
-                                <button type="submit" class="btn-primary" style="width: 100%; padding: 14px; font-weight: 700;">
+                                <button type="submit" class="btn-primary"
+                                    style="width: 100%; padding: 14px; font-weight: 700;">
                                     儲存所有變更
                                 </button>
                             </div>
@@ -404,8 +406,8 @@
                 </form>
             </div>
             <div class="modal-footer">
-                <button class="btn-secondary">取消</button>
-                <button class="btn-primary">儲存</button>
+                <button class="btn-secondary" id="cancelOrderBtn">取消</button>
+                <button class="btn-primary" id="saveOrderBtn">儲存</button>
             </div>
         </div>
     </div>
@@ -431,8 +433,8 @@
                 </form>
             </div>
             <div class="modal-footer">
-                <button class="btn-secondary">取消</button>
-                <button class="btn-primary">儲存</button>
+                <button class="btn-secondary" id="cancelCustomerBtn">取消</button>
+                <button class="btn-primary" id="saveCustomerBtn">儲存</button>
             </div>
         </div>
     </div>
@@ -455,27 +457,40 @@
                     </div>
                     <div class="form-group">
                         <label for="userEmail">Email</label>
-                        <input type="email" id="userEmail" readonly style="background-color: #F3F4F6;">
+                        <input type="text" id="userEmail" readonly style="background-color: #F3F4F6;">
                     </div>
                     <div class="form-group">
                         <label>角色</label>
                         <div class="custom-dropdown" id="userRoleDropdown" data-value="viewer" style="width: 100%;">
                             <button class="dropdown-trigger" type="button" style="width: 100%;">
-                                <span class="dropdown-label">Viewer</span>
+                                <span class="dropdown-selected">Viewer</span>
                                 <span class="dropdown-arrow">▾</span>
                             </button>
                             <ul class="dropdown-menu">
-                                <li class="dropdown-item active" data-value="admin">Admin</li>
+                                <li class="dropdown-item" data-value="admin">Admin</li>
                                 <li class="dropdown-item" data-value="sales">Sales</li>
                                 <li class="dropdown-item" data-value="viewer">Viewer</li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div class="form-group" id="userStatusGroup">
+                        <label>狀態</label>
+                        <div class="custom-dropdown" id="userStatusDropdown" data-value="active" style="width: 100%;">
+                            <button class="dropdown-trigger" type="button" style="width: 100%;">
+                                <span class="dropdown-selected">Active</span>
+                                <span class="dropdown-arrow">▾</span>
+                            </button>
+                            <ul class="dropdown-menu">
+                                <li class="dropdown-item" data-value="active">Active</li>
+                                <li class="dropdown-item" data-value="inactive">Inactive</li>
                             </ul>
                         </div>
                     </div>
                 </form>
             </div>
             <div class="modal-footer">
-                <button class="btn-secondary">取消</button>
-                <button class="btn-primary">儲存</button>
+                <button class="btn-secondary" id="cancelUserBtn">取消</button>
+                <button class="btn-primary" id="saveUserRoleBtn">儲存</button>
             </div>
         </div>
     </div>

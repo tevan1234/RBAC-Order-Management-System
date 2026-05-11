@@ -28,14 +28,19 @@ export const menuConfig = {
 
 // ── 基礎角色判斷 ──
 
+export function getRole(user) {
+  return (user?.role || 'viewer').toLowerCase();
+}
+
 export function isAdmin(user) {
-  return user?.role === 'admin';
+  return getRole(user) === 'admin';
 }
 
 export function canAccessMenu(user, sectionId) {
   if (!user) return false;
   if (sectionId === 'change-password') return true;
-  const items = menuConfig[user?.role] || [];
+  const role = getRole(user);
+  const items = menuConfig[role] || [];
   return items.some(item => item.id === sectionId);
 }
 
@@ -44,31 +49,35 @@ export function canChangePassword(user) {
 }
 
 export function getMenuItems(role) {
-  return menuConfig[role] || [];
+  return menuConfig[role.toLowerCase()] || [];
 }
 
 // ── 使用者管理 ──
 
 export function canEditUser(currentUser) {
-  return currentUser?.role === 'admin';
+  return getRole(currentUser) === 'admin';
 }
 
 export function canEditOtherUser(currentUser, targetUser) {
-  if (currentUser?.role !== 'admin') return false;
+  if (getRole(currentUser) !== 'admin') return false;
   // 自己不能編輯自己（透過此頁面），避免繞過 role 保護
-  if (currentUser?.employeeId === targetUser?.employeeId) return false;
+  const curId = currentUser?.employeeId || currentUser?.employee_id;
+  const tarId = targetUser?.employeeId || targetUser?.employee_id;
+  if (curId === tarId) return false;
   return true;
 }
 
 export function canDeactivateUser(currentUser, targetUser) {
-  if (currentUser?.role !== 'admin') return false;
-  if (currentUser?.employeeId === targetUser?.employeeId) return false;
+  if (getRole(currentUser) !== 'admin') return false;
+  const curId = currentUser?.employeeId || currentUser?.employee_id;
+  const tarId = targetUser?.employeeId || targetUser?.employee_id;
+  if (curId === tarId) return false;
   return true;
 }
 
 export function validateLastAdmin(users) {
   // true = 還有其他 admin，可以繼續操作
-  return users.filter(u => u.role === 'admin' && u.status !== 'inactive').length > 1;
+  return users.filter(u => getRole(u) === 'admin' && u.status !== 'inactive').length > 1;
 }
 
 /**
@@ -83,14 +92,22 @@ export function validateLastAdmin(users) {
  */
 export function canChangeRole(users, currentUser, targetUser, newRole) {
   if (!currentUser || !targetUser) return { allowed: false, reason: '系統錯誤：缺少使用者資訊' };
+  const curRole = getRole(currentUser);
+  const tarRole = getRole(targetUser);
+  const nRole = newRole.toLowerCase();
+
   // 角色沒變，允許
-  if (targetUser.role === newRole) return { allowed: true, reason: '' };
+  if (tarRole === nRole) return { allowed: true, reason: '' };
+  
   // 不可修改自己的角色
-  if (currentUser.employeeId === targetUser.employeeId) {
+  const curId = currentUser.employeeId || currentUser.employee_id;
+  const tarId = targetUser.employeeId || targetUser.employee_id;
+  if (curId === tarId) {
     return { allowed: false, reason: '無法修改自己的角色，請由其他管理員協助變更' };
   }
+  
   // 目標是 admin 且要改成非 admin → 檢查是否還有其他 active admin
-  if (targetUser.role === 'admin' && !validateLastAdmin(users)) {
+  if (tarRole === 'admin' && !validateLastAdmin(users)) {
     return { allowed: false, reason: '系統至少需保留一位管理員，無法變更此使用者的角色' };
   }
   return { allowed: true, reason: '' };
@@ -99,50 +116,77 @@ export function canChangeRole(users, currentUser, targetUser, newRole) {
 // ── 訂單 ──
 
 export function canViewOrder(user, order) {
-  if (user?.role === 'admin' || user?.role === 'viewer') return true;
-  if (user?.role === 'sales') return order?.ownerId === user?.employeeId;
+  const role = getRole(user);
+  if (role === 'admin' || role === 'viewer') return true;
+  if (role === 'sales') {
+    const uid = user.employeeId || user.employee_id;
+    const oid = order.ownerId || order.owner_id;
+    return oid === uid;
+  }
   return false;
 }
 
 export function canEditOrder(user, order) {
-  if (user?.role === 'admin') return true;
-  if (user?.role === 'sales') return order?.ownerId === user?.employeeId;
+  const role = getRole(user);
+  if (role === 'admin') return true;
+  if (role === 'sales') {
+    const uid = user.employeeId || user.employee_id;
+    const oid = order.ownerId || order.owner_id;
+    return oid === uid;
+  }
   return false;
 }
 
 export function canVoidOrder(user) {
-  return user.role === 'admin';
+  return getRole(user) === 'admin';
 }
 
 export function canCompleteOrder(user, order) {
-  if (user?.role === 'admin') return true;
-  if (user?.role === 'sales') return order?.ownerId === user?.employeeId;
+  const role = getRole(user);
+  if (role === 'admin') return true;
+  if (role === 'sales') {
+    const uid = user.employeeId || user.employee_id;
+    const oid = order.ownerId || order.owner_id;
+    return oid === uid;
+  }
   return false;
 }
 
 export function canCreateOrder(user) {
-  return user.role === 'admin' || user.role === 'sales';
+  const role = getRole(user);
+  return role === 'admin' || role === 'sales';
 }
 
 // ── 客戶 ──
 
 export function canViewCustomer(user, customer) {
-  if (user?.role === 'admin') return true;
-  if (user?.role === 'sales') return customer?.ownerId === user?.employeeId;
-  if (user?.role === 'viewer') return true; // 唯讀可看全部
+  const role = getRole(user);
+  if (role === 'admin') return true;
+  if (role === 'sales') {
+    const uid = user.employeeId || user.employee_id;
+    const oid = customer.ownerId || customer.owner_id;
+    return oid === uid;
+  }
+  if (role === 'viewer') return true; // 唯讀可看全部
   return false;
 }
 
 export function canEditCustomer(user, customer) {
-  if (user?.role === 'admin') return true;
-  if (user?.role === 'sales') return customer?.ownerId === user?.employeeId;
+  const role = getRole(user);
+  if (role === 'admin') return true;
+  if (role === 'sales') {
+    const uid = user.employeeId || user.employee_id;
+    const oid = customer.ownerId || customer.owner_id;
+    return oid === uid;
+  }
   return false; // viewer 不可編輯
 }
 
 export function canVoidCustomer(user) {
-  return user.role === 'admin';
+  return getRole(user) === 'admin';
 }
 
 export function canCreateCustomer(user) {
-  return user.role === 'admin' || user.role === 'sales';
+  const role = getRole(user);
+  return role === 'admin' || role === 'sales';
 }

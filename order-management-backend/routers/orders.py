@@ -1,9 +1,10 @@
 from fastapi import APIRouter, HTTPException, Depends
 from typing import List
 from datetime import datetime
-from models.schemas import OrderSchema
+from models.schemas import OrderSchema, OrderUpdate
 from services.supabase_client import get_supabase
 from services.auth_service import get_current_user, require_sales_or_admin
+from services.order_service import OrderService
 from services.audit_service import log_action
 
 router = APIRouter(prefix="/orders", tags=["Order Management"])
@@ -44,24 +45,10 @@ async def create_order(req: OrderSchema, user: dict = Depends(require_sales_or_a
 @router.patch("/{order_id}/status")
 async def update_order_status(order_id: str, status: str, user: dict = Depends(require_sales_or_admin)):
     """更新訂單狀態 (處理中, 已完成, 已作廢)"""
-    if status not in ["處理中", "已完成", "已作廢"]:
-        raise HTTPException(status_code=400, detail="無效的狀態值")
-        
-    supabase = get_supabase()
-    
-    # 權限檢查
-    if user["profile"]["role"] == "sales":
-        check = supabase.table("orders").select("owner_id").eq("id", order_id).single().execute()
-        if not check.data or check.data["owner_id"] != user["profile"]["employee_id"]:
-            raise HTTPException(status_code=403, detail="您無權更新此訂單")
-            
-    res = supabase.table("orders").update({
-        "status": status,
-        "updated_at": datetime.now().isoformat()
-    }).eq("id", order_id).execute()
-    
-    if not res.data:
-        raise HTTPException(status_code=404, detail="找不到該訂單")
-        
-    await log_action(user["profile"]["employee_id"], "UPDATE_ORDER_STATUS", f"Updated order {order_id} to {status}")
-    return res.data[0]
+    return await OrderService.update_order_status(order_id, status, user)
+
+@router.patch("/{order_id}")
+async def update_order(order_id: str, req: OrderUpdate, user: dict = Depends(require_sales_or_admin)):
+    """更新訂單資訊 (通用)"""
+    update_data = req.model_dump(exclude_unset=True)
+    return await OrderService.update_order(order_id, update_data, user)

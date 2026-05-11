@@ -55,7 +55,7 @@ class AuditLogResponse(BaseModel):
     timestamp: datetime
 
 class UserAdminCreate(BaseModel):
-    email: EmailStr
+    email: str
     password: str
     name: str
     employee_id: str
@@ -63,5 +63,20 @@ class UserAdminCreate(BaseModel):
 
 class UserUpdate(BaseModel):
     name: Optional[str] = None
+    email: Optional[str] = None
     role: Optional[str] = None
     status: Optional[str] = None
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str
+    new_password: str
+
+class EmailUpdateRequest(BaseModel):
+    email: EmailStr
+
+class OrderUpdate(BaseModel):
+    customer: Optional[str] = None
+    product_id: Optional[str] = None
+    amount: Optional[float] = None
+    status: Optional[str] = None
+    owner_id: Optional[str] = None

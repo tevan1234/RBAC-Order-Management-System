@@ -40,7 +40,7 @@ async def login(req: LoginRequest):
     supabase = get_supabase()
     try:
         # 1. 根據 employee_id 查詢 email (使用 maybe_single 避免 PGRST116)
-        profile_res = supabase.table("profiles").select("email, name, role, status, must_change_password").eq("employee_id", req.employee_id).maybe_single().execute()
+        profile_res = supabase.table("profiles").select("employee_id, email, name, role, status, must_change_password").eq("employee_id", req.employee_id).maybe_single().execute()
         
         if not profile_res or not hasattr(profile_res, 'data') or not profile_res.data:
             raise HTTPException(status_code=404, detail="員工代號不存在")

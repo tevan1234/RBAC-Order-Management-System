@@ -1,5 +1,6 @@
 from fastapi import Header, HTTPException, Depends
 from services.supabase_client import get_supabase, get_supabase_admin
+from repositories import UserRepository
 import time
 
 # 簡單的記憶體緩存 (方案 B: 60秒 TTL)
@@ -12,6 +13,7 @@ async def get_current_user(authorization: str = Header(...)):
     try:
         token = authorization.replace("Bearer ", "")
         supabase = get_supabase()
+        repo = UserRepository(supabase)
         
         # 取得 Supabase Auth 使用者 (這步通常會解析 JWT，速度較快)
         response = supabase.auth.get_user(token)
@@ -30,22 +32,22 @@ async def get_current_user(authorization: str = Header(...)):
                 "profile": cached["data"]
             }
         
-        # 若無緩存或已過期，則從 profiles 表取得完整資訊
-        profile_res = supabase.table("profiles").select("*").eq("id", user_id).single().execute()
+        # 若無緩存或已過期，則透過 Repository 取得完整資訊
+        profile = repo.get_user_by_id(user_id)
         
-        if not profile_res.data:
+        if not profile:
             raise HTTPException(status_code=404, detail="找不到使用者設定檔")
             
         # 更新緩存
         _profile_cache[user_id] = {
-            "data": profile_res.data,
+            "data": profile,
             "expiry": current_time + CACHE_TTL
         }
             
         return {
             "id": user_id,
             "email": response.user.email,
-            "profile": profile_res.data
+            "profile": profile
         }
     except Exception as e:
         if isinstance(e, HTTPException):
@@ -72,6 +74,7 @@ class AuthService:
         """修改使用者密碼"""
         supabase = get_supabase()
         admin_supabase = get_supabase_admin()
+        repo_admin = UserRepository(admin_supabase)
         
         # 1. 驗證舊密碼 (嘗試登入)
         try:
@@ -93,19 +96,22 @@ class AuthService:
             raise Exception("修改密碼失敗")
         
         # 同步更新 Profiles 表，取消強制更改密碼標記
-        admin_supabase.table("profiles").update({"must_change_password": False}).eq("id", user_id).execute()
+        repo_admin.update_user(user_id, {"must_change_password": False})
         return True
 
     @staticmethod
     async def update_email(user_id: str, new_email: str):
         """更新使用者 Email"""
         admin_supabase = get_supabase_admin()
+        repo_admin = UserRepository(admin_supabase)
+        
         res = admin_supabase.auth.admin.update_user_by_id(
             user_id,
             {"email": new_email}
         )
         if not res.user:
             raise Exception("更新 Email 失敗")
+            
         # 同步更新 Profiles 表
-        admin_supabase.table("profiles").update({"email": new_email}).eq("id", user_id).execute()
+        repo_admin.update_user(user_id, {"email": new_email})
         return True

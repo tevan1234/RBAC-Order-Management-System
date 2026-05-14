@@ -1,110 +1,137 @@
 from fastapi import HTTPException
 from typing import List, Dict, Any
 from datetime import datetime
-from services.supabase_client import get_supabase
+from services.supabase_client import get_supabase, get_supabase_admin
 from services.audit_service import log_action
-from models.schemas import CustomerSchema
+from repositories import CustomerRepository
+
+def _get_repo(admin: bool = False):
+    client = get_supabase_admin() if admin else get_supabase()
+    return CustomerRepository(client)
 
 async def get_customers(user: dict) -> List[Dict[str, Any]]:
-    """取得客戶資料，支援角色過濾"""
-    supabase = get_supabase()
-    role = user["profile"].get("role")
-    employee_id = user["profile"].get("employee_id")
+    """取得客戶資料，支援角色過濾 (Sales 可看自己及 Admin 客戶)"""
+    profile = user.get("profile", user)
+    role = profile.get("role")
+    employee_id = profile.get("employee_id")
     
-    query = supabase.table("customers").select("*")
+    repo = _get_repo(admin=True)
     
     if role == "sales":
-        # 業務僅能看到自己負責的客戶
-        query = query.eq("owner_id", employee_id)
-    elif role not in ["admin", "viewer"]:
+        # 獲取所有 Admin 的 employee_id
+        admin_ids = await get_admin_employee_ids()
+        owners = [employee_id] + admin_ids
+        return repo.get_customers_by_owners(owners)
+    elif role in ["admin", "viewer"]:
+        return repo.get_customers()
+    else:
         raise HTTPException(status_code=403, detail="權限不足，無法讀取客戶資料")
-        
-    res = query.execute()
-    return res.data
+
+async def get_admin_employee_ids() -> List[str]:
+    """獲取系統中所有 Admin 的 employee_id"""
+    from services.supabase_client import get_supabase_admin
+    supabase = get_supabase_admin()
+    res = supabase.table("profiles").select("employee_id").eq("role", "admin").execute()
+    return [r["employee_id"] for r in res.data] if res.data else []
 
 async def create_customer(data: Dict[str, Any], user: dict) -> Dict[str, Any]:
     """建立新客戶，限管理員或業務"""
-    role = user["profile"].get("role")
-    employee_id = user["profile"].get("employee_id")
+    profile = user.get("profile", user)
+    role = profile.get("role")
+    employee_id = profile.get("employee_id")
     
     if role not in ["admin", "sales"]:
         raise HTTPException(status_code=403, detail="權限不足，僅限管理員或業務建立客戶")
         
-    supabase = get_supabase()
+    # 寫入操作使用 Admin 權限以繞過 RLS
+    repo = _get_repo(admin=True)
     
     # 準備資料
     customer_data = data.copy()
+    
+    # 生成 ID (如果前端沒給)
+    if not customer_data.get("customer_id"):
+        import time
+        customer_data["customer_id"] = f"CUST{int(time.time()*1000)}"
+        
+    # 設定負責人 (業務強制設定為自己，管理員若未填則設定為自己)
     if role == "sales":
-        # 強制設定負責人為目前業務
+        customer_data["owner_id"] = employee_id
+    elif not customer_data.get("owner_id"):
         customer_data["owner_id"] = employee_id
         
-    customer_data["created_at"] = datetime.now().isoformat()
-    customer_data["updated_at"] = datetime.now().isoformat()
+    res = repo.create_customer(customer_data)
     
-    res = supabase.table("customers").insert(customer_data).execute()
-    
-    if not res.data:
+    if not res:
         raise HTTPException(status_code=400, detail="建立客戶失敗")
         
     # 紀錄 Log
     await log_action(employee_id, "CREATE_CUSTOMER", f"Created customer: {customer_data.get('customer_id')}")
     
-    return res.data[0]
+    return res
 
 async def update_customer(customer_id: str, data: Dict[str, Any], user: dict) -> Dict[str, Any]:
     """更新客戶資訊，包含權限檢查"""
-    role = user["profile"].get("role")
-    employee_id = user["profile"].get("employee_id")
+    profile = user.get("profile", user)
+    role = profile.get("role")
+    employee_id = profile.get("employee_id")
     
     if role not in ["admin", "sales"]:
         raise HTTPException(status_code=403, detail="權限不足，僅限管理員或業務更新客戶")
         
-    supabase = get_supabase()
+    # 權限檢查時先用一般權限讀取 (或也用 Admin 確保能讀到)
+    repo_admin = _get_repo(admin=True)
     
     # 權限檢查：業務僅能修改自己負責的客戶
-    if role == "sales":
-        check_res = supabase.table("customers").select("owner_id").eq("customer_id", customer_id).single().execute()
-        if not check_res.data:
-            raise HTTPException(status_code=404, detail="找不到該客戶")
-        if check_res.data["owner_id"] != employee_id:
-            raise HTTPException(status_code=403, detail="您無權編輯此客戶")
+    current_customer = repo_admin.get_customer_by_id(customer_id)
+    if not current_customer:
+        raise HTTPException(status_code=404, detail="找不到該客戶")
+        
+    if role == "sales" and current_customer.get("owner_id") != employee_id:
+        raise HTTPException(status_code=403, detail="您無權編輯此客戶")
             
     # 準備更新資料
     update_data = data.copy()
-    update_data["updated_at"] = datetime.now().isoformat()
     
-    res = supabase.table("customers").update(update_data).eq("customer_id", customer_id).execute()
+    # 權限檢查：僅限 admin 可修改狀態
+    if "status" in update_data and role != "admin":
+        update_data.pop("status")
     
-    if not res.data:
+    # 使用 Admin 權限執行更新
+    res = repo_admin.update_customer(customer_id, update_data)
+    
+    if not res:
         raise HTTPException(status_code=404, detail="更新失敗，找不到該客戶")
         
     # 紀錄 Log
     await log_action(employee_id, "UPDATE_CUSTOMER", f"Updated customer: {customer_id}")
     
-    return res.data[0]
+    return res
 
 async def delete_customer(customer_id: str, user: dict) -> bool:
     """刪除客戶，僅限管理員"""
-    role = user["profile"].get("role")
-    employee_id = user["profile"].get("employee_id")
+    profile = user.get("profile", user)
+    role = profile.get("role")
+    employee_id = profile.get("employee_id")
     
     if role != "admin":
         raise HTTPException(status_code=403, detail="權限不足，僅限管理員刪除客戶")
         
-    supabase = get_supabase()
+    repo_admin = _get_repo(admin=True)
     
     # 1. 檢查是否存在
-    check_res = supabase.table("customers").select("customer_id").eq("customer_id", customer_id).execute()
-    if not check_res.data:
+    current_customer = repo_admin.get_customer_by_id(customer_id)
+    if not current_customer:
         raise HTTPException(status_code=404, detail="找不到該客戶")
         
     # 2. 執行刪除
-    res = supabase.table("customers").delete().eq("customer_id", customer_id).execute()
+    success = repo_admin.delete_customer(customer_id)
     
-    if not res.data:
+    if not success:
         raise HTTPException(status_code=400, detail="刪除客戶時發生錯誤")
         
     # 3. 紀錄 Log
     await log_action(employee_id, "DELETE_CUSTOMER", f"Deleted customer: {customer_id}")
     
     return True
+

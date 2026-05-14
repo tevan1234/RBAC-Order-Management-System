@@ -3,10 +3,16 @@ from typing import List, Optional, Dict, Any
 from uuid import UUID
 from services.supabase_client import get_supabase, get_supabase_admin
 from services import audit_service
+from repositories import UserRepository
 import asyncio
 from models.schemas import ProfileResponse, UserAdminCreate, UserUpdate
 
 class UserService:
+    @staticmethod
+    def _get_repo(admin: bool = False):
+        client = get_supabase_admin() if admin else get_supabase()
+        return UserRepository(client)
+
     @staticmethod
     async def create_user_as_admin(user_data: UserAdminCreate, operator: dict) -> Dict[str, Any]:
         """
@@ -15,17 +21,19 @@ class UserService:
         - 帶入 metadata 以觸發資料庫 Trigger
         - 記錄審計日誌
         """
-        supabase = get_supabase_admin()  # Admin 操作必須使用 service_role key
+        # Admin 操作必須使用 service_role key
+        supabase_admin = get_supabase_admin()
+        repo_admin = UserRepository(supabase_admin)
         operator_id = str(operator["profile"]["id"])
         
         # 0. 預先檢查 employee_id 是否已存在 (避免產生無效 Auth 帳號)
-        check_id = supabase.table("profiles").select("id").eq("employee_id", user_data.employee_id).execute()
-        if check_id.data:
+        existing_user = repo_admin.get_user_by_employee_id(user_data.employee_id)
+        if existing_user:
             raise HTTPException(status_code=400, detail=f"員工代號 {user_data.employee_id} 已存在")
 
         try:
             # 1. 建立 Auth 使用者
-            auth_res = supabase.auth.admin.create_user({
+            auth_res = supabase_admin.auth.admin.create_user({
                 "email": user_data.email,
                 "password": user_data.password,
                 "email_confirm": True,
@@ -50,9 +58,8 @@ class UserService:
             # 加入重試機制解決競爭條件 (Race Condition)
             profile_data = None
             for _ in range(5):  # 最多重試 5 次
-                profile_res = supabase.table("profiles").select("*").eq("id", auth_res.user.id).execute()
-                if profile_res.data:
-                    profile_data = profile_res.data[0]
+                profile_data = repo_admin.get_user_by_id(auth_res.user.id)
+                if profile_data:
                     break
                 await asyncio.sleep(0.2)  # 每次等待 200ms
             
@@ -70,6 +77,8 @@ class UserService:
             if "already exists" in detail.lower():
                 raise HTTPException(status_code=400, detail="帳號、Email 或員工代號已存在")
             
+            if isinstance(e, HTTPException):
+                raise e
             raise HTTPException(status_code=400, detail=detail)
 
     @staticmethod
@@ -81,9 +90,8 @@ class UserService:
         if role != "admin":
             raise HTTPException(status_code=403, detail="權限不足，僅限管理員查看用戶列表")
             
-        supabase = get_supabase()
-        res = supabase.table("profiles").select("*").execute()
-        return res.data
+        repo = UserService._get_repo(admin=True)
+        return repo.get_users()
 
     @staticmethod
     async def update_user_status_or_role(target_id: UUID, update_data: UserUpdate, operator_id: str) -> Dict[str, Any]:
@@ -91,7 +99,7 @@ class UserService:
         更新用戶狀態或角色
         - 記錄審計日誌
         """
-        supabase = get_supabase()
+        repo = UserService._get_repo(admin=True)
         
         # 過濾掉 None 的欄位
         update_dict = {k: v for k, v in update_data.model_dump().items() if v is not None}
@@ -99,9 +107,9 @@ class UserService:
         if not update_dict:
             raise HTTPException(status_code=400, detail="未提供有效的更新欄位")
             
-        res = supabase.table("profiles").update(update_dict).eq("id", str(target_id)).execute()
+        updated_user = repo.update_user(str(target_id), update_dict)
         
-        if not res.data:
+        if not updated_user:
             raise HTTPException(status_code=404, detail="找不到該使用者")
             
         # 記錄審計日誌
@@ -111,7 +119,7 @@ class UserService:
             target=f"Target User ID: {target_id}, Changes: {update_dict}"
         )
         
-        return res.data[0]
+        return updated_user
 
     @staticmethod
     async def get_user_profile(target_id: UUID, current_user: dict) -> Dict[str, Any]:
@@ -125,13 +133,13 @@ class UserService:
         if user_role != "admin" and user_id != str(target_id):
             raise HTTPException(status_code=403, detail="權限不足，您僅能查看自己的資料")
             
-        supabase = get_supabase()
-        res = supabase.table("profiles").select("*").eq("id", str(target_id)).single().execute()
+        repo = UserService._get_repo()
+        profile = repo.get_user_by_id(str(target_id))
         
-        if not res.data:
+        if not profile:
             raise HTTPException(status_code=404, detail="找不到該使用者設定檔")
             
-        return res.data
+        return profile
 
     @staticmethod
     async def delete_user(target_id: UUID, operator_id: str) -> bool:
@@ -140,23 +148,22 @@ class UserService:
         - 僅限 admin (由 Router 確保角色)
         - 記錄審計日誌
         """
-        supabase = get_supabase_admin()  # 刪除 Auth 使用者需要 service_role key
+        supabase_admin = get_supabase_admin()
+        repo_admin = UserRepository(supabase_admin)
         
         # 1. 獲取用戶資訊以便記錄日誌
-        profile_res = supabase.table("profiles").select("email, employee_id").eq("id", str(target_id)).single().execute()
-        if not profile_res.data:
+        profile = repo_admin.get_user_by_id(str(target_id))
+        if not profile:
             raise HTTPException(status_code=404, detail="找不到該使用者")
         
-        user_info = profile_res.data
-        
         # 2. 刪除 Auth 使用者 (Supabase 會連動刪除 Profile)
-        supabase.auth.admin.delete_user(str(target_id))
+        supabase_admin.auth.admin.delete_user(str(target_id))
         
         # 3. 記錄審計日誌
         await audit_service.log_action(
             user_id=operator_id,
             action="ADMIN_DELETE_USER",
-            target=f"User ID: {target_id}, Email: {user_info.get('email')}, EmpID: {user_info.get('employee_id')}"
+            target=f"User ID: {target_id}, Email: {profile.get('email')}, EmpID: {profile.get('employee_id')}"
         )
         
         return True

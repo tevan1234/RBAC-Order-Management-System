@@ -38,6 +38,13 @@ class OrderSchema(BaseModel):
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 
+class OrderCreate(BaseModel):
+    id: Optional[str] = None
+    customer: str
+    product_id: str
+    amount: Optional[float] = None
+    owner_id: Optional[str] = None
+
 class CustomerSchema(BaseModel):
     customer_id: str
     name: str
@@ -46,6 +53,18 @@ class CustomerSchema(BaseModel):
     status: str
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
+
+class CustomerCreate(BaseModel):
+    customer_id: Optional[str] = None
+    name: str
+    email: Optional[str] = None
+    owner_id: Optional[str] = None
+    status: Optional[str] = "active"
+
+class CustomerUpdate(BaseModel):
+    name: Optional[str] = None
+    email: Optional[str] = None
+    status: Optional[str] = None
 
 class AuditLogResponse(BaseModel):
     id: UUID

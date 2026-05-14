@@ -75,6 +75,22 @@ export function formatDate(isoString) {
 }
 
 /**
+ * 將 ISO 時間字串轉換為本地日期的 YYYY-MM-DD
+ */
+export function formatDateISO(isoString) {
+  if (!isoString || isoString === '-') return '';
+  try {
+    const d = new Date(isoString);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  } catch {
+    return '';
+  }
+}
+
+/**
  * 格式化金額為 TWD
  */
 export function formatCurrency(amount) {
@@ -222,7 +238,7 @@ export function showConfirm(message, title = '確認操作') {
 // 用 WeakSet 追蹤已初始化的 dropdown，防止重複綁定全域監聽器
 const _initializedDropdowns = new WeakSet();
 
-export function initDropdown(dropdownId, onChange) {
+export function initDropdown(dropdownId, onChange, enableSearch = false) {
   const container = document.getElementById(dropdownId);
   if (!container) return;
 
@@ -245,6 +261,27 @@ export function initDropdown(dropdownId, onChange) {
     }
   }
 
+  // ── 搜尋功能實作 ──
+  if (enableSearch && !menu.querySelector('.dropdown-search-wrapper')) {
+    const searchWrapper = document.createElement('div');
+    searchWrapper.className = 'dropdown-search-wrapper';
+    searchWrapper.innerHTML = `<input type="text" class="dropdown-search-input" placeholder="搜尋...">`;
+    menu.prepend(searchWrapper);
+
+    const searchInput = searchWrapper.querySelector('.dropdown-search-input');
+    searchInput.addEventListener('input', (e) => {
+      const kw = e.target.value.toLowerCase();
+      menu.querySelectorAll('.dropdown-item').forEach(item => {
+        const text = item.textContent.toLowerCase();
+        const val = (item.dataset.value || '').toLowerCase();
+        const isMatch = text.includes(kw) || val.includes(kw);
+        item.classList.toggle('hidden', !isMatch);
+      });
+    });
+
+    searchInput.addEventListener('click', (e) => e.stopPropagation());
+  }
+
   // ── 問題 2 修正：已初始化過的 dropdown 不重複綁定事件 ──
   if (_initializedDropdowns.has(container)) {
     // 僅更新 onChange callback，不重新綁定事件
@@ -260,7 +297,16 @@ export function initDropdown(dropdownId, onChange) {
     const isOpen = container.classList.contains('open');
     // 關閉所有其他 dropdown
     document.querySelectorAll('.custom-dropdown.open').forEach(d => d.classList.remove('open'));
-    if (!isOpen) container.classList.add('open');
+    if (!isOpen) {
+      container.classList.add('open');
+      // 自動聚焦搜尋框
+      const searchInput = menu.querySelector('.dropdown-search-input');
+      if (searchInput) {
+        searchInput.value = '';
+        menu.querySelectorAll('.dropdown-item').forEach(item => item.classList.remove('hidden'));
+        setTimeout(() => searchInput.focus(), 100);
+      }
+    }
   });
 
   // 選項點擊
@@ -293,6 +339,7 @@ export function initDropdown(dropdownId, onChange) {
     }
   });
 }
+
 
 /**
  * 設定下拉選單的選中值（程式碼驅動）
@@ -336,4 +383,28 @@ export function setDropdownValue(dropdownId, value) {
 export function getDropdownValue(dropdownId) {
   const container = document.getElementById(dropdownId);
   return container?.dataset.value || '';
+}
+
+/**
+ * 渲染帶有 Tooltip 的 HTML
+ * @param {string} text - 顯示的文字
+ * @param {Array} data - [{label, value}]
+ */
+export function renderWithTooltip(text, data = []) {
+  const rows = data.map(item => `
+    <div class="tooltip-row">
+      <span class="tooltip-label">${item.label}：</span>
+      <span class="tooltip-value">${item.value}</span>
+    </div>
+  `).join('');
+
+  return `
+    <div class="tooltip-wrapper">
+      <span class="tooltip-trigger">ⓘ</span>
+      <div class="tooltip-content">
+        ${rows}
+      </div>
+      <span class="tooltip-text">${text}</span>
+    </div>
+  `;
 }

@@ -2,13 +2,13 @@
 import { getCurrentUser, logout } from './auth.js';
 import { isAdmin, canCreateOrder, canCreateCustomer, canEditOrder, canVoidOrder, canCompleteOrder, canEditCustomer, canVoidCustomer, canEditOtherUser, canDeactivateUser } from './rbac.js';
 import { getOrders, saveOrder as saveOrderApi, updateOrder, updateOrderStatus, getCustomers, saveCustomer as saveCustomerApi, updateCustomer, getProducts, getUsers, saveUser, updateUser, getLogs } from './data.js';
-import { formatDate, generateEmployeeId, initDropdown, setDropdownValue, getDropdownValue, showNotification, showConfirm } from './utils.js';
+import { formatDate, formatDateISO, generateEmployeeId, initDropdown, setDropdownValue, getDropdownValue, showNotification, showConfirm, renderWithTooltip } from './utils.js';
 
 // ── 全域快取 ──
 let cachedOrders = [], cachedCustomers = [], cachedProducts = [], cachedUsers = [], cachedLogs = [];
 const PAGE_SIZE = 10;
 let ordersPage = 1, customersPage = 1, usersPage = 1, logsPage = 1;
-let orderSearch = { keyword: '', field: 'id', dateFrom: '', dateTo: '' };
+let orderSearch = { keyword: '', field: 'id', dateFrom: '', dateTo: '', dateField: 'created_at' };
 let customerSearch = { keyword: '', field: 'name' };
 let userSearch = { keyword: '', field: 'employeeId' };
 let auditSearch = { keyword: '', field: 'action', dateFrom: '', dateTo: '' };
@@ -113,6 +113,13 @@ function navigateTo(section) {
   if (section === 'orders') {
     const btn = f('addOrderBtn');
     if (btn) btn.style.display = canCreateOrder(currentUser) ? 'block' : 'none';
+
+    // 權限控制：Sales 隱藏負責人搜尋選項
+    const role = (currentUser.role || 'viewer').toLowerCase();
+    const ownerOption = document.querySelector('#orderFieldDropdown .dropdown-item[data-value="ownerName"]');
+    if (ownerOption) {
+      ownerOption.style.display = role === 'sales' ? 'none' : '';
+    }
   } else if (section === 'customers') {
     const btn = f('addCustomerBtn');
     if (btn) btn.style.display = canCreateCustomer(currentUser) ? 'block' : 'none';
@@ -145,6 +152,10 @@ function updateOverviewStats() {
 function renderOrdersList() {
   const tbody = f('ordersTableBody');
   if (!tbody) return;
+  const role = (currentUser.role || 'viewer').toLowerCase();
+  const headerEl = f('orderOwnerHeader');
+  if (headerEl) headerEl.style.display = role === 'sales' ? 'none' : '';
+
   let orders = getVisibleOrders(currentUser);
 
   const pendingCount = orders.filter(o => o.status === '處理中').length;
@@ -161,15 +172,24 @@ function renderOrdersList() {
   if (orderSearch.keyword) {
     const kw = orderSearch.keyword.toLowerCase();
     orders = orders.filter(o => {
-      let v = orderSearch.field === 'ownerName'
-        ? (cachedUsers.find(u => getF(u, 'employee_id', 'employeeId') === getF(o, 'owner_id', 'ownerId'))?.name || '')
-        : String(getF(o, orderSearch.field, toSnake(orderSearch.field)));
+      let v = '';
+      if (orderSearch.field === 'ownerName') {
+        const ownerId = getF(o, 'owner_id', 'ownerId');
+        const owner = cachedUsers.find(u => getF(u, 'employee_id', 'employeeId') === ownerId);
+        v = (owner?.name || ownerId || '');
+      } else if (orderSearch.field === 'customer') {
+        const custId = getF(o, 'customer_id', 'customerId', 'customer');
+        const cust = cachedCustomers.find(c => getF(c, 'customer_id', 'customerId') === custId);
+        v = cust ? `${cust.name || cust.customer_name} ${custId}` : custId;
+      } else {
+        v = String(getF(o, orderSearch.field, toSnake(orderSearch.field)));
+      }
       return v.toLowerCase().includes(kw);
     });
   }
   if (orderSearch.dateFrom || orderSearch.dateTo) {
     orders = orders.filter(o => {
-      const d = getF(o, 'created_at', 'createdAt').split('T')[0];
+      const d = formatDateISO(getF(o, orderSearch.dateField, toSnake(orderSearch.dateField)));
       return !(orderSearch.dateFrom && d < orderSearch.dateFrom) && !(orderSearch.dateTo && d > orderSearch.dateTo);
     });
   }
@@ -179,20 +199,27 @@ function renderOrdersList() {
     const sc = o.status === '已完成' ? 'badge-success' : o.status === '處理中' ? 'badge-info' : 'badge-void';
     const prod = cachedProducts.find(p => getF(p, 'product_id', 'productId') === getF(o, 'product_id', 'productId'))?.name || getF(o, 'product_name') || '未知商品';
     const ownerId = getF(o, 'owner_id', 'ownerId');
-    const own = cachedUsers.find(u => getF(u, 'employee_id', 'employeeId') === ownerId)?.name || ownerId;
+    const own = ownerId; // 改為顯示 employeeId
     const fin = o.status === '已完成' || o.status === '已作廢';
     let btn = '';
     if (!fin) {
       if (canEditOrder(currentUser, { ownerId })) btn += '<button class=\"btn-sm btn-secondary btn-edit-order\" data-id=\"' + sid + '\">編輯</button>';
-      if (canCompleteOrder(currentUser, { ownerId })) btn += '<button class=\"btn-sm btn-success btn-complete-order\" data-id=\"' + sid + '\">完成</button>';
-      if (canVoidOrder(currentUser)) btn += '<button class=\"btn-sm btn-danger btn-void-order\" data-id=\"' + sid + '\">作廢</button>';
     }
-    return '<tr><td><strong>' + sid + '</strong></td><td>' + getF(o, 'customer_name', 'customer') + '</td><td>' + prod + '</td><td style=\"text-align:right\">$' + Number(o.amount || 0).toLocaleString() + '</td><td><span class=\"badge ' + sc + '\">' + o.status + '</span></td><td>' + own + '</td><td class=\"actions-cell\">' + (btn || '—') + '</td></tr>';
+    const sidWithTooltip = renderWithTooltip(sid, [
+      { label: '建立時間', value: formatDate(o.created_at) },
+      { label: '最後更新', value: formatDate(o.updated_at) }
+    ]);
+    const custId = getF(o, 'customer_id', 'customerId', 'customer');
+    const customerObj = cachedCustomers.find(c => getF(c, 'customer_id', 'customerId') === custId);
+    const customerName = customerObj ? (customerObj.name || customerObj.customer_name) : custId;
+    const customerDisplay = custId ? `${customerName}<span class="customer-id-text">（${custId}）</span>` : customerName;
+
+    const ownerCell = role === 'sales' ? '' : '<td>' + own + '</td>';
+    return '<tr><td><strong>' + sidWithTooltip + '</strong></td><td>' + customerDisplay + '</td><td>' + prod + '</td><td style="text-align:right">$' + Number(o.amount || 0).toLocaleString() + '</td><td><span class="badge ' + sc + '\">' + o.status + '</span></td>' + ownerCell + '<td class="actions-cell">' + (btn || '—') + '</td></tr>';
+
   }).join('');
 
   tbody.querySelectorAll('.btn-edit-order').forEach(b => b.addEventListener('click', () => openOrderModal(b.dataset.id)));
-  tbody.querySelectorAll('.btn-void-order').forEach(b => b.addEventListener('click', () => voidOrder(b.dataset.id)));
-  tbody.querySelectorAll('.btn-complete-order').forEach(b => b.addEventListener('click', () => completeOrder(b.dataset.id)));
   createPaginator(orders.length, PAGE_SIZE, ordersPage, p => { ordersPage = p; renderOrdersList(); }, 'ordersPaginator');
 }
 
@@ -201,36 +228,47 @@ function openOrderModal(id = null) {
   const amEl = f('orderAmount');
   const custMenu = f('orderCustomerMenu');
   const prodMenu = f('orderProductMenu');
-  if (custMenu) custMenu.innerHTML = cachedCustomers.filter(c => c.status === 'active').map(c => '<li class=\"dropdown-item\" data-value=\"' + (c.name || c.customer_name) + '\">' + (c.name || c.customer_name) + '</li>').join('');
-  if (prodMenu) prodMenu.innerHTML = cachedProducts.map(p => '<li class=\"dropdown-item\" data-value=\"' + getF(p, 'product_id', 'productId') + '\">' + p.name + ' - $' + p.price + '</li>').join('');
+  if (custMenu) custMenu.innerHTML = cachedCustomers.filter(c => c.status === 'active').map(c => {
+    const cid = getF(c, 'customer_id', 'customerId');
+    const name = c.name || c.customer_name;
+    return `<li class="dropdown-item" data-value="${cid}">${name}<span class="customer-id-text">（${cid}）</span></li>`;
+  }).join('');
+  if (prodMenu) prodMenu.innerHTML = cachedProducts.map(p => '<li class="dropdown-item" data-value="' + getF(p, 'product_id', 'productId') + '\">' + p.name + ' - $' + p.price + '</li>').join('');
 
-  initDropdown('orderCustomerDropdown');
-  initDropdown('orderProductDropdown', v => { const p = cachedProducts.find(x => getF(x, 'product_id', 'productId') === v); if (p && amEl) amEl.value = p.price; });
+  initDropdown('orderCustomerDropdown', null, true);
+  initDropdown('orderProductDropdown', v => { const p = cachedProducts.find(x => getF(x, 'product_id', 'productId') === v); if (p && amEl) amEl.value = p.price; }, true);
 
-  const titleEl = f('modalTitle'), idEl = f('orderId');
+  initDropdown('orderStatusDropdown');
+
+  const titleEl = f('modalTitle'), idEl = f('orderId'), statusGroup = f('orderStatusGroup');
   if (id) {
     const o = cachedOrders.find(x => getF(x, 'id', 'order_id') === id); if (!o) return;
     if (titleEl) titleEl.textContent = '編輯訂單'; if (idEl) idEl.value = id;
-    setDropdownValue('orderCustomerDropdown', getF(o, 'customer_name', 'customer'));
+    setDropdownValue('orderCustomerDropdown', getF(o, 'customer_name', 'customer_id', 'customer'));
     setDropdownValue('orderProductDropdown', getF(o, 'product_id', 'productId'));
+    setDropdownValue('orderStatusDropdown', o.status || '處理中');
     if (amEl) amEl.value = o.amount;
+    if (statusGroup) statusGroup.style.display = 'block';
   } else {
     if (titleEl) titleEl.textContent = '新增訂單'; if (idEl) idEl.value = '';
     setDropdownValue('orderCustomerDropdown', ''); setDropdownValue('orderProductDropdown', '');
+    setDropdownValue('orderStatusDropdown', '處理中');
     if (amEl) amEl.value = '';
+    if (statusGroup) statusGroup.style.display = 'none';
   }
   modal.classList.add('active');
 }
 
 async function saveOrder() {
   const id = f('orderId')?.value;
-  const customer = getDropdownValue('orderCustomerDropdown');
+  const customerId = getDropdownValue('orderCustomerDropdown');
   const productId = getDropdownValue('orderProductDropdown');
+  const status = getDropdownValue('orderStatusDropdown');
   const amount = Number(f('orderAmount')?.value);
-  if (!customer || !productId || !amount) return showNotification('請完整填寫資訊', 'warning');
+  if (!customerId || !productId || !amount) return showNotification('請完整填寫資訊', 'warning');
   try {
-    if (id) await updateOrder(id, { customer_name: customer, product_id: productId, amount });
-    else await saveOrderApi({ customer_name: customer, product_id: productId, amount });
+    if (id) await updateOrder(id, { customer: customerId, product_id: productId, amount, status });
+    else await saveOrderApi({ customer: customerId, product_id: productId, amount });
     f('orderModal')?.classList.remove('active');
     showNotification(id ? '訂單更新成功' : '訂單建立成功', 'success');
     await loadDashboardData();
@@ -253,6 +291,14 @@ async function completeOrder(id) {
 // ── 客戶 ──
 function renderCustomersList() {
   const tbody = f('customersTableBody'); if (!tbody) return;
+  const headerEl = f('customerOwnerHeader');
+  const role = (currentUser.role || 'viewer').toLowerCase();
+  
+  // 更新標題
+  if (headerEl) {
+    headerEl.textContent = role === 'sales' ? '客戶歸屬' : '負責人';
+  }
+
   let custs = getVisibleCustomers(currentUser);
   if (customerSearch.keyword) {
     const kw = customerSearch.keyword.toLowerCase();
@@ -263,28 +309,47 @@ function renderCustomersList() {
     const cid = getF(c, 'customer_id', 'customerId');
     const bc = c.status === 'active' ? 'badge-success' : 'badge-secondary';
     const oid = getF(c, 'owner_id', 'ownerId');
-    const own = cachedUsers.find(u => getF(u, 'employee_id', 'employeeId') === oid)?.name || oid;
+    
+    // 內容顯示規則
+    let own = oid;
+    if (role === 'sales') {
+      const myId = currentUser.employeeId || currentUser.employee_id;
+      if (oid === myId) {
+        own = '<span class="badge badge-my-customer">我的客戶</span>';
+      } else {
+        own = '<span class="badge badge-public-customer">公共客戶</span>';
+      }
+    }
+
     let btn = '';
     if (canEditCustomer(currentUser, { ownerId: oid })) btn += '<button class=\"btn-sm btn-secondary btn-edit-customer\" data-id=\"' + cid + '\">編輯</button>';
-    if (canVoidCustomer(currentUser) && c.status === 'active') btn += '<button class=\"btn-sm btn-danger btn-void-customer\" data-id=\"' + cid + '\">停用</button>';
-    return '<tr><td><strong>' + cid + '</strong></td><td>' + (c.name || '') + '</td><td>' + (c.email || '') + '</td><td>' + own + '</td><td><span class=\"badge ' + bc + '\">' + c.status + '</span></td><td>' + formatDate(c.created_at) + '</td><td>' + formatDate(c.updated_at) + '</td><td class=\"actions-cell\">' + (btn || '—') + '</td></tr>';
+    const customerDisplay = c.name || '';
+    
+    return '<tr><td><strong>' + cid + '</strong></td><td>' + customerDisplay + '</td><td>' + (c.email || '') + '</td><td style=\"text-align:center\">' + own + '</td><td><span class=\"badge ' + bc + '\">' + c.status + '</span></td><td>' + formatDate(c.created_at) + '</td><td>' + formatDate(c.updated_at) + '</td><td class=\"actions-cell\">' + (btn || '—') + '</td></tr>';
+
   }).join('');
   tbody.querySelectorAll('.btn-edit-customer').forEach(b => b.addEventListener('click', () => openCustomerModal(b.dataset.id)));
-  tbody.querySelectorAll('.btn-void-customer').forEach(b => b.addEventListener('click', () => voidCustomer(b.dataset.id)));
   createPaginator(custs.length, PAGE_SIZE, customersPage, p => { customersPage = p; renderCustomersList(); }, 'customersPaginator');
 }
 
 function openCustomerModal(id = null) {
   const modal = f('customerModal'); if (!modal) return;
-  const idEl = f('customerId'), nameEl = f('customerName'), emailEl = f('customerEmail');
-  const titleEl = f('customerModalTitle');
+  const idEl = f('customerId'), nameEl = f('customerName'), emailEl = f('customerEmail'), titleEl = f('customerModalTitle');
+  initDropdown('customerStatusDropdown');
+  const statusGroup = f('customerStatusGroup');
+  const isAdm = isAdmin(currentUser);
+
   if (id) {
     const c = cachedCustomers.find(x => getF(x, 'customer_id', 'customerId') === id); if (!c) return;
     if (titleEl) titleEl.textContent = '編輯客戶'; if (idEl) idEl.value = id;
     if (nameEl) nameEl.value = c.name || ''; if (emailEl) emailEl.value = c.email || '';
+    setDropdownValue('customerStatusDropdown', c.status || 'active');
+    if (statusGroup) statusGroup.style.display = isAdm ? 'block' : 'none';
   } else {
     if (titleEl) titleEl.textContent = '新增客戶'; if (idEl) idEl.value = '';
     if (nameEl) nameEl.value = ''; if (emailEl) emailEl.value = '';
+    setDropdownValue('customerStatusDropdown', 'active');
+    if (statusGroup) statusGroup.style.display = 'none';
   }
   modal.classList.add('active');
 }
@@ -293,10 +358,16 @@ async function saveCustomer() {
   const id = f('customerId')?.value;
   const name = f('customerName')?.value.trim();
   const email = f('customerEmail')?.value.trim();
+  const status = getDropdownValue('customerStatusDropdown');
   if (!name || !email) return showNotification('請填寫完整資訊', 'warning');
   try {
-    if (id) await updateCustomer(id, { name, email });
-    else await saveCustomerApi({ name, email });
+    if (id) {
+      const updateData = { name, email };
+      if (isAdmin(currentUser)) updateData.status = status;
+      await updateCustomer(id, updateData);
+    } else {
+      await saveCustomerApi({ name, email });
+    }
     f('customerModal')?.classList.remove('active');
     showNotification(id ? '客戶更新成功' : '客戶建立成功', 'success');
     await loadDashboardData();
@@ -398,7 +469,7 @@ function renderAuditLogsList() {
   }
   if (auditSearch.dateFrom || auditSearch.dateTo) {
     logs = logs.filter(l => {
-      const d = getF(l, 'timestamp', 'created_at').split('T')[0];
+      const d = formatDateISO(getF(l, 'timestamp', 'created_at'));
       return !(auditSearch.dateFrom && d < auditSearch.dateFrom) && !(auditSearch.dateTo && d > auditSearch.dateTo);
     });
   }
@@ -528,6 +599,11 @@ function bindEvents() {
   // 搜尋與下拉連動
   initDropdown('orderFieldDropdown', v => { orderSearch.field = v; renderOrdersList(); });
   f('orderSearchKeyword')?.addEventListener('input', e => { orderSearch.keyword = e.target.value; ordersPage = 1; renderOrdersList(); });
+  
+  // 新增日期篩選事件監聽器
+  initDropdown('orderDateFieldDropdown', v => { orderSearch.dateField = v; renderOrdersList(); });
+  f('orderDateFrom')?.addEventListener('change', e => { orderSearch.dateFrom = e.target.value; ordersPage = 1; renderOrdersList(); });
+  f('orderDateTo')?.addEventListener('change', e => { orderSearch.dateTo = e.target.value; ordersPage = 1; renderOrdersList(); });
   initDropdown('customerFieldDropdown', v => { customerSearch.field = v; renderCustomersList(); });
   f('customerSearchKeyword')?.addEventListener('input', e => { customerSearch.keyword = e.target.value; customersPage = 1; renderCustomersList(); });
   initDropdown('userFieldDropdown', v => { userSearch.field = v; renderUsersList(); });
@@ -536,8 +612,18 @@ function bindEvents() {
   f('auditSearchKeyword')?.addEventListener('input', e => { auditSearch.keyword = e.target.value; logsPage = 1; renderAuditLogsList(); });
 
   // 日期重設
-  f('orderDateReset')?.addEventListener('click', () => { f('orderDateFrom').value = ''; f('orderDateTo').value = ''; orderSearch.dateFrom = ''; orderSearch.dateTo = ''; renderOrdersList(); });
+  f('orderDateReset')?.addEventListener('click', () => { 
+    f('orderDateFrom').value = ''; f('orderDateTo').value = ''; 
+    orderSearch.dateFrom = ''; orderSearch.dateTo = ''; 
+    setDropdownValue('orderDateFieldDropdown', 'created_at');
+    orderSearch.dateField = 'created_at';
+    renderOrdersList(); 
+  });
   f('auditDateReset')?.addEventListener('click', () => { f('auditDateFrom').value = ''; f('auditDateTo').value = ''; auditSearch.dateFrom = ''; auditSearch.dateTo = ''; renderAuditLogsList(); });
+
+  // 補上稽核日誌日期監聽器
+  f('auditDateFrom')?.addEventListener('change', e => { auditSearch.dateFrom = e.target.value; logsPage = 1; renderAuditLogsList(); });
+  f('auditDateTo')?.addEventListener('change', e => { auditSearch.dateTo = e.target.value; logsPage = 1; renderAuditLogsList(); });
 
   // 模態框關閉按鈕
   document.querySelectorAll('.btn-close, .btn-secondary').forEach(b => {
@@ -556,7 +642,9 @@ function getVisibleCustomers(u) {
   if (!u) return [];
   if (u.role === 'admin' || u.role === 'viewer') return cachedCustomers;
   const uid = u.employeeId || u.employee_id;
-  return cachedCustomers.filter(c => getF(c, 'owner_id', 'ownerId') === uid);
+  // 前端過濾：保留自己負責的與 Admin 負責的 (Admin 通常由後端判斷，前端此處為保險/同步顯示)
+  // 由於後端 API /customers/ 已經做了角色過濾，cachedCustomers 應該已經是過濾後的結果
+  return cachedCustomers;
 }
 function toSnake(s) { return s.replace(/([A-Z])/g, m => '_' + m.toLowerCase()); }
 

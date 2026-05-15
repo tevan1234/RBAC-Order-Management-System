@@ -219,6 +219,11 @@ function renderOrdersList() {
 
   }).join('');
 
+  if (paged.length === 0) {
+    const colCount = role === 'sales' ? 6 : 7;
+    tbody.innerHTML = '<tr><td colspan="' + colCount + '" style="text-align:center; padding: 20px; color: var(--text-secondary);">目前沒有任何資料</td></tr>';
+  }
+
   tbody.querySelectorAll('.btn-edit-order').forEach(b => b.addEventListener('click', () => openOrderModal(b.dataset.id)));
   createPaginator(orders.length, PAGE_SIZE, ordersPage, p => { ordersPage = p; renderOrdersList(); }, 'ordersPaginator');
 }
@@ -260,19 +265,51 @@ function openOrderModal(id = null) {
 }
 
 async function saveOrder() {
+  const btn = f('saveOrderBtn');
+  if (btn.disabled) return;
+  
   const id = f('orderId')?.value;
   const customerId = getDropdownValue('orderCustomerDropdown');
   const productId = getDropdownValue('orderProductDropdown');
   const status = getDropdownValue('orderStatusDropdown');
   const amount = Number(f('orderAmount')?.value);
+  
   if (!customerId || !productId || !amount) return showNotification('請完整填寫資訊', 'warning');
+  
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '儲存中...';
+  
   try {
-    if (id) await updateOrder(id, { customer: customerId, product_id: productId, amount, status });
-    else await saveOrderApi({ customer: customerId, product_id: productId, amount });
-    f('orderModal')?.classList.remove('active');
-    showNotification(id ? '訂單更新成功' : '訂單建立成功', 'success');
+    if (id) {
+      // 編輯訂單：僅刷新訂單列表
+      await updateOrder(id, { customer: customerId, product_id: productId, amount, status });
+      f('orderModal')?.classList.remove('active');
+      showNotification('訂單更新成功', 'success');
+      const updatedOrders = await getOrders();
+      cachedOrders = Array.isArray(updatedOrders) ? updatedOrders : [];
+      renderOrdersList();
+    } else {
+      // 新建訂單：並行刷新訂單與客戶（客戶可能因轉移而改變歸屬）
+      await saveOrderApi({ customer: customerId, product_id: productId, amount });
+      f('orderModal')?.classList.remove('active');
+      showNotification('訂單建立成功', 'success');
+      const [orders, customers] = await Promise.all([getOrders(), getCustomers()]);
+      cachedOrders = Array.isArray(orders) ? orders : [];
+      cachedCustomers = Array.isArray(customers) ? customers : [];
+      renderOrdersList();
+      renderCustomersList();
+    }
+  } catch (e) { 
+    // 如果是競爭失敗的訊息，延長顯示時間
+    const duration = e.message.includes('已被其他同事分派') ? 8000 : 4000;
+    showNotification('儲存失敗：' + e.message, 'error', duration); 
+    // 即使失敗也重新整理資料，以確保客戶歸屬狀態正確
     await loadDashboardData();
-  } catch (e) { showNotification('儲存失敗：' + e.message, 'error'); }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = originalText;
+  }
 }
 
 async function voidOrder(id) {
@@ -328,6 +365,10 @@ function renderCustomersList() {
     return '<tr><td><strong>' + cid + '</strong></td><td>' + customerDisplay + '</td><td>' + (c.email || '') + '</td><td style=\"text-align:center\">' + own + '</td><td><span class=\"badge ' + bc + '\">' + c.status + '</span></td><td>' + formatDate(c.created_at) + '</td><td>' + formatDate(c.updated_at) + '</td><td class=\"actions-cell\">' + (btn || '—') + '</td></tr>';
 
   }).join('');
+  
+  if (paged.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding: 20px; color: var(--text-secondary);">目前沒有任何資料</td></tr>';
+  }
   tbody.querySelectorAll('.btn-edit-customer').forEach(b => b.addEventListener('click', () => openCustomerModal(b.dataset.id)));
   createPaginator(custs.length, PAGE_SIZE, customersPage, p => { customersPage = p; renderCustomersList(); }, 'customersPaginator');
 }
@@ -397,6 +438,10 @@ function renderUsersList() {
     if (!isSelf && canEditOtherUser(currentUser, { employeeId: uid })) btn += '<button class=\"btn-sm btn-secondary btn-edit-user\" data-id=\"' + uid + '\">編輯</button>';
     return '<tr><td><strong>' + uid + '</strong>' + (isSelf ? ' <span class=\"badge badge-info\" style=\"font-size:10px\">您</span>' : '') + '</td><td>' + (u.name || '') + '</td><td>' + (u.email || '') + '</td><td><span class=\"badge badge-' + u.role + '\">' + (u.role || '').toUpperCase() + '</span></td><td><span class=\"badge ' + (u.status === 'active' ? 'badge-success' : 'badge-secondary') + '\">' + u.status + '</span></td><td class=\"actions-cell\">' + (btn || '—') + '</td></tr>';
   }).join('');
+  
+  if (paged.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding: 20px; color: var(--text-secondary);">目前沒有任何資料</td></tr>';
+  }
   tbody.querySelectorAll('.btn-edit-user').forEach(b => b.addEventListener('click', () => openUserModal(b.dataset.id)));
   createPaginator(users.length, PAGE_SIZE, usersPage, p => { usersPage = p; renderUsersList(); }, 'usersPaginator');
 }
@@ -476,8 +521,33 @@ function renderAuditLogsList() {
   const paged = logs.slice((logsPage - 1) * PAGE_SIZE, logsPage * PAGE_SIZE);
   tbody.innerHTML = paged.map(l => {
     const action = getF(l, 'action', 'action_type');
-    return '<tr><td>' + getF(l, 'id', 'log_id') + '</td><td><span class=\"badge\">' + action + '</span></td><td><strong>' + (getF(l, 'operator_name', 'operatorName', 'operator_id', 'operatorId') || '-') + '</strong></td><td>' + (getF(l, 'target_id', 'targetId') || '-') + '</td><td><small>' + formatDate(l.timestamp) + '</small></td></tr>';
+    const operator = getF(l, 'operator_id', 'operatorId', 'user_id', 'userId') || '-';
+    
+    // 解析目標資訊 (處理 JSON 或純文字)
+    let targetDisplay = '-';
+    const rawTarget = getF(l, 'target', 'target_id', 'targetId');
+    if (rawTarget) {
+      if (typeof rawTarget === 'string' && (rawTarget.startsWith('{') || rawTarget.startsWith('['))) {
+        try {
+          const details = JSON.parse(rawTarget);
+          // 優先顯示主要 ID
+          targetDisplay = details.order_id || details.customer_id || details.employee_id || details.product_id || details.id || rawTarget;
+          // 如果結果還是物件，則轉回字串 (保險處理)
+          if (typeof targetDisplay === 'object') targetDisplay = JSON.stringify(targetDisplay);
+        } catch (e) {
+          targetDisplay = rawTarget;
+        }
+      } else {
+        targetDisplay = rawTarget;
+      }
+    }
+
+    return '<tr><td>' + getF(l, 'id', 'log_id') + '</td><td><span class=\"badge\">' + action + '</span></td><td><strong>' + operator + '</strong></td><td>' + targetDisplay + '</td><td><small>' + formatDate(l.timestamp) + '</small></td></tr>';
   }).join('');
+  
+  if (paged.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding: 20px; color: var(--text-secondary);">目前沒有任何資料</td></tr>';
+  }
   createPaginator(logs.length, PAGE_SIZE, logsPage, p => { logsPage = p; renderAuditLogsList(); }, 'auditLogsPaginator');
 }
 
@@ -542,7 +612,9 @@ async function saveAccountSettings(event) {
     }
 
     // 更新本地存儲
-    localStorage.setItem('currentUser', JSON.stringify(currentUser));
+    const currentUser = getCurrentUser();
+    currentUser.email = newEmail;
+    sessionStorage.setItem('currentUser', JSON.stringify(currentUser));
     updateHeaderUI();
 
     // 清空密碼欄位

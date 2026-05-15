@@ -49,8 +49,9 @@ export async function updateOrder(orderId, data) {
 }
 
 export async function updateOrderStatus(orderId, status) {
-  return await apiRequest(`/orders/${orderId}/status?status=${encodeURIComponent(status)}`, {
-    method: 'PATCH'
+  return await apiRequest(`/orders/${orderId}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status })
   });
 }
 

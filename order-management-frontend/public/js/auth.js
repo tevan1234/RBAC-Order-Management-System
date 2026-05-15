@@ -33,8 +33,8 @@ async function handleLogin(event) {
       };
       
       // 儲存認證資訊
-      localStorage.setItem('token', data.access_token);
-      localStorage.setItem('currentUser', JSON.stringify(userData));
+      sessionStorage.setItem('token', data.access_token);
+      sessionStorage.setItem('currentUser', JSON.stringify(userData));
 
       sessionStorage.setItem('pendingNotification', JSON.stringify({
         message: `歡迎回來，${data.user.name || data.user.employee_id}！`,
@@ -77,10 +77,10 @@ export async function updateEmail(newEmail) {
 }
 
 /**
- * 獲取目前登入使用者 (從 localStorage)
+ * 獲取目前登入使用者 (從 sessionStorage)
  */
 export function getCurrentUser() {
-  const userJson = localStorage.getItem('currentUser');
+  const userJson = sessionStorage.getItem('currentUser');
   return userJson ? JSON.parse(userJson) : null;
 }
 
@@ -88,8 +88,8 @@ export function getCurrentUser() {
  * 登出
  */
 export function logout() {
-  localStorage.removeItem('token');
-  localStorage.removeItem('currentUser');
+  sessionStorage.removeItem('token');
+  sessionStorage.removeItem('currentUser');
   window.location.href = 'index.html';
 }
 

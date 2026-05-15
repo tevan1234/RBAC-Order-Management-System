@@ -1,6 +1,6 @@
 from fastapi import APIRouter, HTTPException, Depends
 from typing import List
-from models.schemas import OrderSchema, OrderUpdate, OrderCreate
+from models.schemas import OrderSchema, OrderUpdate, OrderCreate, OrderStatusUpdate
 from services.auth_service import get_current_user, require_sales_or_admin
 from services.order_service import OrderService
 
@@ -17,9 +17,20 @@ async def create_order(req: OrderCreate, user: dict = Depends(require_sales_or_a
     return await OrderService.create_order(req.model_dump(), user)
 
 @router.patch("/{order_id}/status")
-async def update_order_status(order_id: str, status: str, user: dict = Depends(require_sales_or_admin)):
-    """更新訂單狀態 (處理中, 已完成, 已作廢)"""
-    return await OrderService.update_order_status(order_id, status, user)
+async def update_order_status(
+    order_id: str,
+    body: OrderStatusUpdate,
+    user: dict = Depends(require_sales_or_admin)
+):
+    """
+    更新訂單狀態
+
+    Body:
+    ```json
+    { "status": "已完成" | "已作廢" }
+    ```
+    """
+    return await OrderService.update_order_status(order_id, body.status, user)
 
 @router.patch("/{order_id}")
 async def update_order(order_id: str, req: OrderUpdate, user: dict = Depends(require_sales_or_admin)):

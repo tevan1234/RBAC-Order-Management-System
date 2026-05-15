@@ -33,7 +33,7 @@ class OrderService:
         role = profile.get("role")
         employee_id = profile.get("employee_id")
 
-        repo = OrderService._get_repo()
+        repo = OrderService._get_repo(admin=True)
         
         if role == "sales":
             return repo.get_orders(owner_id=employee_id)
@@ -53,7 +53,7 @@ class OrderService:
         role = profile.get("role")
         employee_id = profile.get("employee_id")
 
-        repo = OrderService._get_repo()
+        repo = OrderService._get_repo(admin=True)
         order = repo.get_order_by_id(order_id)
 
         if not order:
@@ -122,10 +122,8 @@ class OrderService:
         else:
             order_data_owner_id = data.get("owner_id") or employee_id
 
-        order_id = data.get("id")
-        if not order_id:
-            order_id = f"ORD{random.randint(1000, 9999)}"
-
+        # 3. 準備訂單資料
+        order_id = data.get("id") or f"ORD{random.randint(1000, 9999)}"
         order_data = {
             "id": order_id,
             "product_id": product_id,
@@ -135,29 +133,52 @@ class OrderService:
             "owner_id": order_data_owner_id
         }
 
-        # 3. 寫入資料庫 (透過 OrderRepository)
+        # 4. 若客戶原屬 Admin，以原子操作轉移負責人給當前 Sales
+        #    [關鍵修正]：必須在建立訂單前完成轉移，否則失敗時訂單已寫入
+        transfer_result = None
+        if role == "sales" and customer_info and customer_owner_id in admin_ids:
+            transfer_result = customer_repo.update_customer_conditional(
+                customer_id,
+                update_data={"owner_id": employee_id},
+                condition={"owner_id": customer_owner_id}
+            )
+            if transfer_result is None:
+                raise HTTPException(
+                    status_code=409,
+                    detail="客戶已被其他同事分派，請刷新列表後重試"
+                )
+
+        # 5. 寫入訂單資料庫 (透過 OrderRepository)
         new_order = repo_admin.create_order(order_data)
         
         if not new_order:
             raise HTTPException(status_code=500, detail="建立訂單失敗")
 
-        # 4. 若客戶原屬 Admin，則轉移負責人給當前 Sales
-        if role == "sales" and customer_info and customer_owner_id in admin_ids:
-            customer_repo.update_customer(customer_id, {
-                "owner_id": employee_id
-            })
-            await audit_service.log_action(
-                user_id=employee_id,
-                action="TRANSFER_CUSTOMER",
-                target=f"Customer ID: {customer_id} transferred from Admin to {employee_id}"
-            )
-
-        # 4. 記錄審計日誌
+        # 6. 記錄審計日誌
         await audit_service.log_action(
             user_id=employee_id,
             action="CREATE_ORDER",
-            target=f"Order ID: {new_order.get('id')}"
+            details={
+                "order_id": order_id,
+                "customer_id": customer_id,
+                "product_id": product_id,
+                "amount": amount,
+                "customer_transferred": transfer_result is not None
+            }
         )
+
+        if transfer_result:
+            await audit_service.log_action(
+                user_id=employee_id,
+                action="TRANSFER_CUSTOMER",
+                details={
+                    "customer_id": customer_id,
+                    "from_owner_id": customer_owner_id,
+                    "to_owner_id": employee_id,
+                    "trigger_order_id": order_id,
+                    "reason": "auto_assign_on_first_order"
+                }
+            )
 
         return new_order
 

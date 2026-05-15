@@ -30,6 +30,32 @@ class CustomerRepository(BaseRepository):
         res = self.update(data, {"customer_id": customer_id})
         return res.data[0] if res.data else {}
 
+    def update_customer_conditional(
+        self,
+        customer_id: str,
+        update_data: Dict[str, Any],
+        condition: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """
+        原子條件更新：只有當所有 condition 條件都成立時才執行更新。
+
+        利用 Supabase 多條件 .eq() 串接在資料庫層面的原子性，
+        防止多個 Sales 同時轉移同一客戶的競態條件。
+
+        Returns:
+            dict  — 更新成功，回傳更新後的客戶資料
+            None  — 條件不符（客戶已被其他人搶先操作），未執行更新
+        """
+        query = (
+            self.supabase.table("customers")
+            .update(update_data)
+            .eq("customer_id", customer_id)
+        )
+        for key, value in condition.items():
+            query = query.eq(key, value)
+        result = query.execute()
+        return result.data[0] if result.data else None
+
     def delete_customer(self, customer_id: str) -> bool:
         res = self.delete({"customer_id": customer_id})
         return len(res.data) > 0

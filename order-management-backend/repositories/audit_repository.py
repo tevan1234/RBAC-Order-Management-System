@@ -15,5 +15,5 @@ class AuditRepository(BaseRepository):
         return res.data[0] if res.data else {}
 
     def get_logs(self, limit: int = 100) -> List[Dict[str, Any]]:
-        res = self.select("*").order("timestamp", desc=True).limit(limit).execute()
+        res = self.select("*, profiles(employee_id)").order("timestamp", desc=True).limit(limit).execute()
         return res.data

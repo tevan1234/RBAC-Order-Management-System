@@ -72,6 +72,7 @@ class AuditLogResponse(BaseModel):
     user_id: str
     target: str
     timestamp: datetime
+    operator_id: Optional[str] = None
 
 class UserAdminCreate(BaseModel):
     email: str
@@ -99,3 +100,7 @@ class OrderUpdate(BaseModel):
     amount: Optional[float] = None
     status: Optional[str] = None
     owner_id: Optional[str] = None
+
+class OrderStatusUpdate(BaseModel):
+    """訂單狀態更新請求 Body"""
+    status: str

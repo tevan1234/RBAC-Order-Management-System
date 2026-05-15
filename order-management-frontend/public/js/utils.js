@@ -13,7 +13,7 @@ const API_BASE = 'http://localhost:8000/api';
  * 自動注入 Bearer Token，處理 401 自動登出
  */
 export async function apiRequest(endpoint, options = {}) {
-  const token = localStorage.getItem('token');
+  const token = sessionStorage.getItem('token');
 
   const headers = {
     'Content-Type': 'application/json',
@@ -33,11 +33,11 @@ export async function apiRequest(endpoint, options = {}) {
     if (response.status === 401) {
       // 在登入頁面不做自動跳轉（避免靜默失敗），直接拋出錯誤
       const isLoginPage = window.location.pathname.includes('index.html') || window.location.pathname === '/';
-      if (!isLoginPage) {
-        localStorage.removeItem('token');
-        localStorage.removeItem('currentUser');
-        window.location.href = 'index.html';
-        return;
+      if (response.status === 401) {
+        sessionStorage.removeItem('token');
+        sessionStorage.removeItem('currentUser');
+        window.location.href = '/index.html';
+        throw new Error('未授權，請重新登入');
       }
       // 登入頁面：讓錯誤往上拋，由 auth.js 顯示訊息
       const errData = await response.json().catch(() => ({}));

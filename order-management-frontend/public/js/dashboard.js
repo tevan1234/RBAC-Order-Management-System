@@ -149,6 +149,23 @@ function updateOverviewStats() {
 }
 
 // ── 訂單 ──
+function updateOrderOverview(orders) {
+  const pendingCount = orders.filter(o => o.status === '處理中').length;
+  const doneCount = orders.filter(o => o.status === '已完成').length;
+  const voidCount = orders.filter(o => o.status === '已作廢').length;
+
+  if (f('overviewTotal')) f('overviewTotal').textContent = orders.length;
+  if (f('statPending')) f('statPending').textContent = pendingCount;
+  if (f('statDone')) f('statDone').textContent = doneCount;
+  if (f('statVoid')) f('statVoid').textContent = voidCount;
+
+  const activeOrders = orders.length - voidCount;
+  const progress = orders.length > 0 ? Math.round((doneCount / (activeOrders || 1)) * 100) : 0;
+  
+  if (f('overviewProgressFill')) f('overviewProgressFill').style.width = progress + '%';
+  if (f('overviewProgressLabel')) f('overviewProgressLabel').textContent = '完成率 ' + progress + '%';
+}
+
 function renderOrdersList() {
   const tbody = f('ordersTableBody');
   if (!tbody) return;
@@ -158,16 +175,7 @@ function renderOrdersList() {
 
   let orders = getVisibleOrders(currentUser);
 
-  const pendingCount = orders.filter(o => o.status === '處理中').length;
-  const doneCount = orders.filter(o => o.status === '已完成').length;
-  const voidCount = orders.filter(o => o.status === '已作廢').length;
-  if (f('overviewTotal')) f('overviewTotal').textContent = orders.length;
-  if (f('statPending')) f('statPending').textContent = pendingCount;
-  if (f('statDone')) f('statDone').textContent = doneCount;
-  if (f('statVoid')) f('statVoid').textContent = voidCount;
-  const progress = orders.length > 0 ? Math.round((doneCount / (orders.length - voidCount || 1)) * 100) : 0;
-  if (f('overviewProgressFill')) f('overviewProgressFill').style.width = progress + '%';
-  if (f('overviewProgressLabel')) f('overviewProgressLabel').textContent = '完成率 ' + progress + '%';
+
 
   if (orderSearch.keyword) {
     const kw = orderSearch.keyword.toLowerCase();
@@ -175,12 +183,15 @@ function renderOrdersList() {
       let v = '';
       if (orderSearch.field === 'ownerName') {
         const ownerId = getF(o, 'owner_id', 'ownerId');
-        const owner = cachedUsers.find(u => getF(u, 'employee_id', 'employeeId') === ownerId);
-        v = (owner?.name || ownerId || '');
+        v = ownerId || '';
       } else if (orderSearch.field === 'customer') {
         const custId = getF(o, 'customer_id', 'customerId', 'customer');
         const cust = cachedCustomers.find(c => getF(c, 'customer_id', 'customerId') === custId);
         v = cust ? `${cust.name || cust.customer_name} ${custId}` : custId;
+      } else if (orderSearch.field === 'product') {
+        const prodId = getF(o, 'product_id', 'productId');
+        const prod = cachedProducts.find(p => getF(p, 'product_id', 'productId') === prodId);
+        v = prod?.name || getF(o, 'product_name') || '未知商品';
       } else {
         v = String(getF(o, orderSearch.field, toSnake(orderSearch.field)));
       }
@@ -193,6 +204,9 @@ function renderOrdersList() {
       return !(orderSearch.dateFrom && d < orderSearch.dateFrom) && !(orderSearch.dateTo && d > orderSearch.dateTo);
     });
   }
+
+  updateOrderOverview(orders);
+
   const paged = orders.slice((ordersPage - 1) * PAGE_SIZE, ordersPage * PAGE_SIZE);
   tbody.innerHTML = paged.map(o => {
     const sid = getF(o, 'id', 'order_id');

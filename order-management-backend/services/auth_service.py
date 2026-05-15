@@ -57,7 +57,7 @@ async def get_current_user(authorization: str = Header(...)):
         raise HTTPException(status_code=401, detail="驗證失敗或 Token 已過期")
 
 # ── 第一層：角色檢查 (Role-Based) ──
-async def require_role(required_roles: List[str]) -> Callable:
+def require_role(required_roles: List[str]) -> Callable:
     """
     驗證使用者角色
     用途：檢查使用者是否具有指定的角色
@@ -74,7 +74,7 @@ async def require_role(required_roles: List[str]) -> Callable:
     return verify
 
 # ── 第二層：功能權限檢查 (Permission-Based) ──
-async def require_permission(permission: str) -> Callable:
+def require_permission(permission: str) -> Callable:
     """
     驗證使用者是否擁有特定權限
     用途：更細粒度的功能權限控制
@@ -104,7 +104,7 @@ async def require_permission(permission: str) -> Callable:
     return verify
 
 # ── 第三層：資源所有權檢查 (Ownership-Based) ──
-async def require_ownership(
+def require_ownership(
     resource_type: str,
     resource_id_param: str = "resource_id"
 ) -> Callable:

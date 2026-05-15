@@ -1,6 +1,7 @@
 from fastapi import HTTPException
 from typing import List, Optional, Dict, Any
 from uuid import UUID
+from datetime import datetime, timezone
 from services.supabase_client import get_supabase, get_supabase_admin
 from services import audit_service
 from repositories import UserRepository
@@ -106,6 +107,9 @@ class UserService:
         
         if not update_dict:
             raise HTTPException(status_code=400, detail="未提供有效的更新欄位")
+            
+        # 注入更新時間
+        update_dict["updated_at"] = datetime.now(timezone.utc).isoformat()
             
         updated_user = repo.update_user(str(target_id), update_dict)
         

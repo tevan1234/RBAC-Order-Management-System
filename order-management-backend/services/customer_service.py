@@ -1,6 +1,6 @@
 from fastapi import HTTPException
 from typing import List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from services.supabase_client import get_supabase, get_supabase_admin
 from services.audit_service import log_action
 from repositories import CustomerRepository
@@ -22,10 +22,8 @@ async def get_customers(user: dict) -> List[Dict[str, Any]]:
         admin_ids = await get_admin_employee_ids()
         owners = [employee_id] + admin_ids
         return repo.get_customers_by_owners(owners)
-    elif role in ["admin", "viewer"]:
-        return repo.get_customers()
     else:
-        raise HTTPException(status_code=403, detail="權限不足，無法讀取客戶資料")
+        return repo.get_customers()
 
 async def get_admin_employee_ids() -> List[str]:
     """獲取系統中所有 Admin 的 employee_id"""
@@ -60,9 +58,6 @@ async def create_customer(data: Dict[str, Any], user: dict) -> Dict[str, Any]:
     profile = user.get("profile", user)
     role = profile.get("role")
     employee_id = profile.get("employee_id")
-    
-    if role not in ["admin", "sales"]:
-        raise HTTPException(status_code=403, detail="權限不足，僅限管理員或業務建立客戶")
         
     # 寫入操作使用 Admin 權限以繞過 RLS
     repo = _get_repo(admin=True)
@@ -96,29 +91,19 @@ async def update_customer(customer_id: str, data: Dict[str, Any], user: dict) ->
     profile = user.get("profile", user)
     role = profile.get("role")
     employee_id = profile.get("employee_id")
-    
-    if role not in ["admin", "sales"]:
-        raise HTTPException(status_code=403, detail="權限不足，僅限管理員或業務更新客戶")
-        
-    # 權限檢查時先用一般權限讀取 (或也用 Admin 確保能讀到)
-    repo_admin = _get_repo(admin=True)
-    
-    # 權限檢查：業務僅能修改自己負責的客戶
-    current_customer = repo_admin.get_customer_by_id(customer_id)
-    if not current_customer:
-        raise HTTPException(status_code=404, detail="找不到該客戶")
-        
-    if role == "sales" and current_customer.get("owner_id") != employee_id:
-        raise HTTPException(status_code=403, detail="您無權編輯此客戶")
             
     # 準備更新資料
     update_data = data.copy()
-    
+
+    # 自動補充 UTC 時間戳 (ISO 格式)
+    update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+
     # 權限檢查：僅限 admin 可修改狀態
     if "status" in update_data and role != "admin":
         update_data.pop("status")
     
     # 使用 Admin 權限執行更新
+    repo_admin = _get_repo(admin=True)
     res = repo_admin.update_customer(customer_id, update_data)
     
     if not res:
@@ -132,11 +117,7 @@ async def update_customer(customer_id: str, data: Dict[str, Any], user: dict) ->
 async def delete_customer(customer_id: str, user: dict) -> bool:
     """刪除客戶，僅限管理員"""
     profile = user.get("profile", user)
-    role = profile.get("role")
     employee_id = profile.get("employee_id")
-    
-    if role != "admin":
-        raise HTTPException(status_code=403, detail="權限不足，僅限管理員刪除客戶")
         
     repo_admin = _get_repo(admin=True)
     

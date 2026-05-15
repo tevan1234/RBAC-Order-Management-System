@@ -1,5 +1,6 @@
 from fastapi import HTTPException
 from typing import List, Dict, Any, Optional
+from datetime import datetime, timezone
 from services.supabase_client import get_supabase, get_supabase_admin
 from services import audit_service
 from repositories import ProductRepository
@@ -50,6 +51,10 @@ class ProductService:
     async def update_product(product_id: str, update_data: Dict[str, Any], operator_id: str) -> Dict[str, Any]:
         """更新產品資訊"""
         repo = ProductService._get_repo(admin=True)
+        
+        # 注入更新時間
+        update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+        
         updated_product = repo.update_product(product_id, update_data)
         if not updated_product:
             raise HTTPException(status_code=404, detail=f"更新失敗，找不到產品編號: {product_id}")

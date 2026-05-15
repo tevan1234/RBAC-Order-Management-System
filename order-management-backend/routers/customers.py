@@ -32,7 +32,7 @@ async def get_customer(
     """查看客戶 - admin, sales, viewer 可操作"""
     return await customer_service.get_customer(customer_id, user)
 
-@router.put("/{customer_id}")
+@router.patch("/{customer_id}")
 async def update_customer(
     customer_id: str,
     update_data: CustomerUpdate,

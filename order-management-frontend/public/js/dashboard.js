@@ -9,7 +9,7 @@ let cachedOrders = [], cachedCustomers = [], cachedProducts = [], cachedUsers = 
 const PAGE_SIZE = 10;
 let ordersPage = 1, customersPage = 1, usersPage = 1, logsPage = 1;
 let orderSearch = { keyword: '', field: 'id', dateFrom: '', dateTo: '', dateField: 'created_at' };
-let customerSearch = { keyword: '', field: 'name' };
+let customerSearch = { keyword: '', field: 'customerId' };
 let userSearch = { keyword: '', field: 'employeeId' };
 let auditSearch = { keyword: '', field: 'action', dateFrom: '', dateTo: '' };
 const currentUser = getCurrentUser();
@@ -123,6 +123,18 @@ function navigateTo(section) {
   } else if (section === 'customers') {
     const btn = f('addCustomerBtn');
     if (btn) btn.style.display = canCreateCustomer(currentUser) ? 'block' : 'none';
+
+    // 權限控制：Sales 隱藏負責人搜尋選項
+    const role = (currentUser.role || 'viewer').toLowerCase();
+    const ownerOption = document.querySelector('#customerFieldDropdown .dropdown-item[data-value="ownerId"]');
+    if (ownerOption) {
+      ownerOption.style.display = role === 'sales' ? 'none' : '';
+      // 安全檢查：如果是 Sales 且目前選中負責人，重設為客戶編號
+      if (role === 'sales' && customerSearch.field === 'ownerId') {
+        customerSearch.field = 'customerId';
+        setDropdownValue('customerFieldDropdown', 'customerId');
+      }
+    }
   } else if (section === 'users') {
     const btn = f('addUserBtn');
     if (btn) btn.style.display = isAdmin(currentUser) ? 'block' : 'none';

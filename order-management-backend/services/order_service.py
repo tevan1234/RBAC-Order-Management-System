@@ -3,7 +3,7 @@ from services.supabase_client import get_supabase, get_supabase_admin
 from services import audit_service
 from repositories import OrderRepository, ProductRepository
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import random
 
 # 訂單狀態定義
@@ -139,7 +139,10 @@ class OrderService:
         if role == "sales" and customer_info and customer_owner_id in admin_ids:
             transfer_result = customer_repo.update_customer_conditional(
                 customer_id,
-                update_data={"owner_id": employee_id},
+                update_data={
+                    "owner_id": employee_id,
+                    "updated_at": datetime.now(timezone.utc).isoformat()
+                },
                 condition={"owner_id": customer_owner_id}
             )
             if transfer_result is None:
@@ -214,7 +217,8 @@ class OrderService:
 
         # 4. 更新狀態
         updated_order = repo.update_order(order_id, {
-            "status": new_status
+            "status": new_status,
+            "updated_at": datetime.now(timezone.utc).isoformat()
         })
         
         if not updated_order:
@@ -250,6 +254,9 @@ class OrderService:
         elif role not in ["admin", "sales"]:
              raise HTTPException(status_code=403, detail="權限不足")
 
+        # 注入更新時間
+        update_data["updated_at"] = datetime.now(timezone.utc).isoformat()
+        
         updated_order = repo.update_order(order_id, update_data)
         
         await audit_service.log_action(

@@ -1,6 +1,7 @@
-from fastapi import Header, HTTPException, Depends
+from fastapi import Header, HTTPException, Depends, Request
 from services.supabase_client import get_supabase, get_supabase_admin
-from repositories import UserRepository
+from repositories import UserRepository, OrderRepository, CustomerRepository
+from typing import List, Optional, Callable, Any
 import time
 
 # 簡單的記憶體緩存 (方案 B: 60秒 TTL)
@@ -55,14 +56,140 @@ async def get_current_user(authorization: str = Header(...)):
         print(f"Auth error: {e}")
         raise HTTPException(status_code=401, detail="驗證失敗或 Token 已過期")
 
+# ── 第一層：角色檢查 (Role-Based) ──
+async def require_role(required_roles: List[str]) -> Callable:
+    """
+    驗證使用者角色
+    用途：檢查使用者是否具有指定的角色
+    """
+    async def verify(user: dict = Depends(get_current_user)):
+        user_role = user["profile"].get("role")
+        if user_role not in required_roles:
+            raise HTTPException(
+                status_code=403,
+                detail=f"權限不足。需要角色：{', '.join(required_roles)}，你的角色：{user_role}",
+                headers={"X-Required-Roles": ",".join(required_roles)}
+            )
+        return user
+    return verify
+
+# ── 第二層：功能權限檢查 (Permission-Based) ──
+async def require_permission(permission: str) -> Callable:
+    """
+    驗證使用者是否擁有特定權限
+    用途：更細粒度的功能權限控制
+    """
+    async def verify(user: dict = Depends(get_current_user)):
+        from .permissions import PERMISSIONS
+        user_role = user["profile"].get("role")
+        
+        if permission not in PERMISSIONS:
+            raise HTTPException(status_code=500, detail="未定義的權限")
+        
+        allowed_roles = PERMISSIONS.get(permission, [])
+        if user_role not in allowed_roles:
+            raise HTTPException(
+                status_code=403,
+                detail=f"無權進行此操作。需要權限：{permission}"
+            )
+        
+        # Viewer 角色額外檢查
+        if user_role == 'viewer' and not permission.endswith('_VIEW'):
+            raise HTTPException(
+                status_code=403,
+                detail="Viewer 角色為唯讀，無法進行修改操作"
+            )
+        
+        return user
+    return verify
+
+# ── 第三層：資源所有權檢查 (Ownership-Based) ──
+async def require_ownership(
+    resource_type: str,
+    resource_id_param: str = "resource_id"
+) -> Callable:
+    """
+    驗證使用者是否擁有指定資源
+    用途：確保使用者只能操作自己的資源（對 Sales 角色）
+    """
+    async def verify(
+        request: Request,
+        user: dict = Depends(get_current_user)
+    ):
+        from .permissions import OWNERSHIP_FIELDS
+        
+        user_role = user["profile"].get("role")
+        user_id = user["profile"].get("id") # UUID
+        employee_id = user["profile"].get("employee_id")
+        
+        # Admin 無需檢查所有權
+        if user_role == 'admin':
+            return user
+        
+        # Viewer 不允許修改
+        if user_role == 'viewer':
+            raise HTTPException(
+                status_code=403,
+                detail="Viewer 角色無法進行此操作"
+            )
+        
+        # Sales 需要檢查所有權
+        if user_role == 'sales':
+            # 從路徑參數或查詢參數取得資源 ID
+            resource_id = request.path_params.get(resource_id_param) or request.query_params.get(resource_id_param)
+            
+            if not resource_id:
+                raise HTTPException(status_code=400, detail="缺少資源 ID")
+            
+            supabase = get_supabase()
+            resource = None
+            
+            # 取得資源
+            if resource_type == 'order':
+                repo = OrderRepository(supabase)
+                resource = repo.get_order_by_id(resource_id)
+            elif resource_type == 'customer':
+                repo = CustomerRepository(supabase)
+                resource = repo.get_customer_by_id(resource_id)
+            elif resource_type == 'user':
+                repo = UserRepository(supabase)
+                resource = repo.get_user_by_id(resource_id)
+            else:
+                raise HTTPException(status_code=500, detail="未知資源類型")
+            
+            if not resource:
+                raise HTTPException(status_code=404, detail="資源不存在")
+            
+            # 檢查所有權
+            owner_field = OWNERSHIP_FIELDS.get(resource_type)
+            
+            # 決定比較對象：user 類型比對 UUID (user_id)，其餘比對 employee_id
+            compare_id = user_id if resource_type == 'user' else employee_id
+            
+            if resource.get(owner_field) != compare_id:
+                raise HTTPException(
+                    status_code=403,
+                    detail=f"您無權操作他人的 {resource_type} 資源"
+                )
+        
+        return user
+    return verify
+
+# ── 便利函數 ──
 async def require_admin(user: dict = Depends(get_current_user)):
-    """驗證是否為 admin 權限"""
+    """要求 Admin 角色的快捷函數"""
     if user["profile"].get("role") != "admin":
-        raise HTTPException(status_code=403, detail="權限不足，僅限管理員存取")
+        raise HTTPException(status_code=403, detail="權限不足，僅限管理員")
+    return user
+
+async def require_not_readonly(user: dict = Depends(get_current_user)):
+    """要求非唯讀角色的快捷函數"""
+    if user["profile"].get("role") == "viewer":
+        raise HTTPException(status_code=403, detail="Viewer 角色無法進行此操作")
     return user
 
 async def require_sales_or_admin(user: dict = Depends(get_current_user)):
-    """驗證是否為 admin 或 sales 權限"""
+    """驗證是否為 admin 或 sales 權限 (相容性保留)"""
     role = user["profile"].get("role")
     if role not in ["admin", "sales"]:
         raise HTTPException(status_code=403, detail="權限不足，僅限業務或管理員存取")

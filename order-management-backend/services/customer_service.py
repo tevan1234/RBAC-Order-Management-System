@@ -34,6 +34,27 @@ async def get_admin_employee_ids() -> List[str]:
     res = supabase.table("profiles").select("employee_id").eq("role", "admin").execute()
     return [r["employee_id"] for r in res.data] if res.data else []
 
+async def get_customer(customer_id: str, user: dict) -> Dict[str, Any]:
+    """取得單一客戶資料"""
+    profile = user.get("profile", user)
+    role = profile.get("role")
+    employee_id = profile.get("employee_id")
+    
+    repo = _get_repo(admin=True)
+    customer = repo.get_customer_by_id(customer_id)
+    
+    if not customer:
+        raise HTTPException(status_code=404, detail="找不到該客戶")
+        
+    # 權限檢查邏輯 (與 get_customers 一致)
+    if role == "sales":
+        admin_ids = await get_admin_employee_ids()
+        allowed_owners = [employee_id] + admin_ids
+        if customer.get("owner_id") not in allowed_owners:
+            raise HTTPException(status_code=403, detail="您無權查看此客戶")
+            
+    return customer
+
 async def create_customer(data: Dict[str, Any], user: dict) -> Dict[str, Any]:
     """建立新客戶，限管理員或業務"""
     profile = user.get("profile", user)

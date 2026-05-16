@@ -126,6 +126,23 @@ class UserService:
         return updated_user
 
     @staticmethod
+    async def is_last_admin(target_id: UUID) -> bool:
+        """
+        檢查目標用戶是否為系統中最後一位活躍的管理員
+        """
+        repo = UserService._get_repo(admin=True)
+        users = repo.get_users()
+        active_admins = [u for u in users if u.get("role") == "admin" and u.get("status") == "active"]
+        
+        if len(active_admins) > 1:
+            return False
+            
+        if len(active_admins) == 1 and str(active_admins[0]["id"]) == str(target_id):
+            return True
+            
+        return False
+
+    @staticmethod
     async def get_user_profile(target_id: UUID, current_user: dict) -> Dict[str, Any]:
         """
         獲取單一用戶 Profile

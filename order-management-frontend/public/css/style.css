@@ -1887,3 +1887,32 @@ body {
 }
 
 
+
+/* ── 商品管理主題色 (玫瑰粉色系) ── */
+.theme-product .section-header h2 { color: #be123c; }
+.theme-product .table-container {
+  border-top: 4px solid #e11d48;
+  background-color: #fff1f2;
+}
+.theme-product .data-table th {
+  background-color: #ffe4e6;
+  color: #9f1239;
+  border-bottom-color: #fecdd3;
+}
+.theme-product .data-table td {
+  background-color: #ffffff;
+  border-bottom-color: #e2e8f0;
+}
+.theme-product .data-table tr:hover td { background-color: #fff1f2; }
+
+/* 商品管理搜尋列 focus 主題色 */
+.theme-product .search-input:focus,
+.theme-product .dropdown-trigger:hover,
+.theme-product .custom-dropdown.open .dropdown-trigger {
+  border-color: #e11d48;
+  box-shadow: 0 0 0 3px rgba(225, 29, 72, 0.12);
+}
+.theme-product .dropdown-item.active {
+  background-color: #ffe4e6;
+  color: #be123c;
+}

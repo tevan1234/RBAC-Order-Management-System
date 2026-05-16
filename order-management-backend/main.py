@@ -33,6 +33,21 @@ app.include_router(orders.router, prefix="/api")
 app.include_router(customers.router, prefix="/api")
 app.include_router(audit.router, prefix="/api")
 
+@app.exception_handler(Exception)
+async def global_exception_handler(request, exc):
+    from fastapi.responses import JSONResponse
+    import logging
+    logging.error(f"Global error catch: {exc}")
+    
+    return JSONResponse(
+        status_code=500,
+        content={"detail": str(exc)},
+        headers={
+            "Access-Control-Allow-Origin": "http://localhost:3000",
+            "Access-Control-Allow-Credentials": "true"
+        }
+    )
+
 @app.get("/health")
 async def health_check():
     """健康檢查端點"""

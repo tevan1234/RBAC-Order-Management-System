@@ -22,11 +22,25 @@ class ProfileResponse(BaseModel):
     role: str
     status: str
     created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
 class ProductSchema(BaseModel):
     product_id: str
     name: str
     price: float
+    status: str
+    updated_at: Optional[datetime] = None
+
+class ProductCreate(BaseModel):
+    product_id: Optional[str] = None
+    name: str
+    price: float
+    status: Optional[str] = "active"
+
+class ProductUpdate(BaseModel):
+    name: Optional[str] = None
+    price: Optional[float] = None
+    status: Optional[str] = None
 
 class OrderSchema(BaseModel):
     id: str

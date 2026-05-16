@@ -223,7 +223,11 @@ class AuthService:
             raise Exception("修改密碼失敗")
         
         # 同步更新 Profiles 表，取消強制更改密碼標記
-        repo_admin.update_user(user_id, {"must_change_password": False})
+        from datetime import datetime, timezone
+        repo_admin.update_user(user_id, {
+            "must_change_password": False,
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        })
         return True
 
     @staticmethod
@@ -240,5 +244,9 @@ class AuthService:
             raise Exception("更新 Email 失敗")
             
         # 同步更新 Profiles 表
-        repo_admin.update_user(user_id, {"email": new_email})
+        from datetime import datetime, timezone
+        repo_admin.update_user(user_id, {
+            "email": new_email,
+            "updated_at": datetime.now(timezone.utc).isoformat()
+        })
         return True

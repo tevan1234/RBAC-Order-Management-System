@@ -30,6 +30,12 @@ class ProductService:
     async def create_product(product_data: Dict[str, Any], operator_id: str) -> Dict[str, Any]:
         """新增產品"""
         repo = ProductService._get_repo(admin=True)
+        
+        # 如果沒有提供 ID，自動生成一個
+        if not product_data.get("product_id"):
+            import time
+            product_data["product_id"] = f"PROD{int(time.time()*1000)}"
+            
         try:
             new_product = repo.create_product(product_data)
             if not new_product:
@@ -66,22 +72,4 @@ class ProductService:
         )
         return updated_product
 
-    @staticmethod
-    async def delete_product(product_id: str, operator_id: str) -> bool:
-        """刪除產品"""
-        repo = ProductService._get_repo(admin=True)
-        # 先確認產品是否存在
-        if not repo.get_product_by_id(product_id):
-            raise HTTPException(status_code=404, detail=f"刪除失敗，找不到產品編號: {product_id}")
-            
-        success = repo.delete_product(product_id)
-        if not success:
-            raise HTTPException(status_code=400, detail="刪除產品時發生錯誤")
-            
-        await audit_service.log_action(
-            user_id=operator_id,
-            action="DELETE_PRODUCT",
-            target=f"Product ID: {product_id}"
-        )
-        return True
 

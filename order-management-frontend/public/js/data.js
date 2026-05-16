@@ -6,11 +6,11 @@ import { apiRequest } from './utils.js';
 
 // === Products ===
 export async function getProducts() {
-  return await apiRequest('/products/');
+  return await apiRequest('/products');
 }
 
 export async function saveProduct(product) {
-  return await apiRequest('/products/', {
+  return await apiRequest('/products', {
     method: 'POST',
     body: JSON.stringify(product)
   });
@@ -23,11 +23,6 @@ export async function updateProduct(productId, data) {
   });
 }
 
-export async function deleteProduct(productId) {
-  return await apiRequest(`/products/${productId}`, {
-    method: 'DELETE'
-  });
-}
 
 // === Orders ===
 export async function getOrders() {

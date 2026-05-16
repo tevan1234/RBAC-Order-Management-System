@@ -240,6 +240,7 @@
                                     <th>Email</th>
                                     <th>角色</th>
                                     <th>狀態</th>
+                                    <th>更新時間</th>
                                     <th>操作</th>
                                 </tr>
                             </thead>
@@ -294,6 +295,46 @@
                         </table>
                     </div>
                     <div id="auditLogsPaginator" class="paginator"></div>
+                </section>
+
+                <!-- Products Section (Admin Only) -->
+                <section id="section-products" class="section-content theme-product">
+                    <div class="section-header">
+                        <h2>商品管理</h2>
+                        <button class="btn-add" id="addProductBtn">+ 新增商品</button>
+                    </div>
+                    <!-- 搜尋列 -->
+                    <div class="search-bar">
+                        <div class="custom-dropdown" id="productFieldDropdown" data-value="name">
+                            <button class="dropdown-trigger" type="button">
+                                <span class="dropdown-selected">商品名稱</span>
+                                <span class="dropdown-arrow">▾</span>
+                            </button>
+                            <ul class="dropdown-menu">
+                                <li class="dropdown-item active" data-value="name">商品名稱</li>
+                                <li class="dropdown-item" data-value="product_id">商品編號</li>
+                            </ul>
+                        </div>
+                        <input class="search-input" id="productSearchKeyword" type="text" placeholder="請輸入關鍵字">
+                    </div>
+                    <div class="table-container">
+                        <table class="data-table">
+                            <thead style="text-align: center;">
+                                <tr>
+                                    <th>商品編號</th>
+                                    <th>商品名稱</th>
+                                    <th>價格</th>
+                                    <th>狀態</th>
+                                    <th>最後更新</th>
+                                    <th>操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="productsTableBody">
+                                <!-- 由 JS 填充 -->
+                            </tbody>
+                        </table>
+                    </div>
+                    <div id="productsPaginator" class="paginator"></div>
                 </section>
 
                 <!-- Change Password Section (Account Settings) -->
@@ -532,6 +573,51 @@
             </div>
         </div>
     </div>
+    <!-- Product Modal -->
+    <div class="modal-overlay" id="productModal">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h3 id="productModalTitle">新增商品</h3>
+                <button class="btn-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="productForm">
+                    <input type="hidden" id="modal_product_id_hidden">
+                    <div class="form-group" id="product_id_group">
+                        <label for="productIdDisplay">商品編號</label>
+                        <input type="text" id="productIdDisplay" placeholder="系統自動產生">
+                    </div>
+                    <div class="form-group">
+                        <label for="productName">商品名稱</label>
+                        <input type="text" id="productName" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="productPrice">價格</label>
+                        <input type="number" id="productPrice" required min="0" step="0.01">
+                    </div>
+                    <div class="form-group" id="productStatusGroup">
+                        <label>狀態</label>
+                        <div class="custom-dropdown" id="productStatusDropdown" data-value="active"
+                            style="width: 100%;">
+                            <button class="dropdown-trigger" type="button" style="width: 100%;">
+                                <span class="dropdown-selected">Active</span>
+                                <span class="dropdown-arrow">▾</span>
+                            </button>
+                            <ul class="dropdown-menu">
+                                <li class="dropdown-item" data-value="active">Active</li>
+                                <li class="dropdown-item" data-value="inactive">Inactive</li>
+                            </ul>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn-secondary" id="cancelProductBtn">取消</button>
+                <button class="btn-primary" id="saveProductBtn">儲存</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Confirm Modal -->
     <div class="modal-overlay" id="confirmModal">
         <div class="modal-card" style="max-width: 400px;">

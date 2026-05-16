@@ -7,8 +7,9 @@ export const menuConfig = {
   admin: [
     { id: 'dashboard', label: '儀表板', icon: '📊' },
     { id: 'orders', label: '訂單管理', icon: '🛍️' },
-    { id: 'customers', label: '客戶管理', icon: '👤' },
-    { id: 'users', label: '使用者管理', icon: '👥' },
+    { id: 'customers', label: '客戶管理', icon: '👥' },
+    { id: 'products', label: '商品管理', icon: '📦' },
+    { id: 'users', label: '使用者管理', icon: '👤' },
     { id: 'auditlogs', label: '操作紀錄', icon: '📝' },
     { id: 'change-password', label: '帳戶設定', icon: '⚙️' }
   ],
@@ -189,4 +190,14 @@ export function canVoidCustomer(user) {
 export function canCreateCustomer(user) {
   const role = getRole(user);
   return role === 'admin' || role === 'sales';
+}
+
+// ── 商品 ──
+
+export function canEditProduct(user) {
+  return getRole(user) === 'admin';
+}
+
+export function canCreateProduct(user) {
+  return getRole(user) === 'admin';
 }

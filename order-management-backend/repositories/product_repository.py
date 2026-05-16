@@ -23,6 +23,3 @@ class ProductRepository(BaseRepository):
         res = self.update(data, {"product_id": product_id})
         return res.data[0] if res.data else {}
 
-    def delete_product(self, product_id: str) -> bool:
-        res = self.delete({"product_id": product_id})
-        return len(res.data) > 0

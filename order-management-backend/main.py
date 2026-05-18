@@ -7,7 +7,7 @@ import os
 load_dotenv()
 
 # 匯入路由
-from routers import auth, users, products, orders, customers, audit
+from routers import auth, users, products, orders, customers, audit_logs
 
 app = FastAPI(title="Order Management System API")
 
@@ -31,7 +31,7 @@ app.include_router(users.router, prefix="/api")
 app.include_router(products.router, prefix="/api")
 app.include_router(orders.router, prefix="/api")
 app.include_router(customers.router, prefix="/api")
-app.include_router(audit.router, prefix="/api")
+app.include_router(audit_logs.router, prefix="/api")
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):

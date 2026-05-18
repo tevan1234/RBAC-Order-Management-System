@@ -166,7 +166,7 @@ async def test_customer_crud(ac: AsyncClient):
 @pytest.mark.asyncio
 async def test_audit_logs(ac: AsyncClient):
     headers = {"Authorization": "Bearer fake-token"}
-    with patch("routers.audit.audit_service", spec=True) as mock_service:
+    with patch("routers.audit_logs.audit_service", spec=True) as mock_service:
         mock_service.get_audit_logs = AsyncMock(return_value=[{
             "id": "1e97de8c-c5ed-440f-9274-455fe8389c31", 
             "action": "LOGIN", 
@@ -177,3 +177,42 @@ async def test_audit_logs(ac: AsyncClient):
         response = await ac.get("/api/audit/", headers=headers)
         assert response.status_code == 200
         assert len(response.json()) == 1
+
+@pytest.mark.asyncio
+async def test_audit_logs_forbidden_for_non_admin(ac: AsyncClient):
+    # 測試非 admin 角色（如 sales）發送請求會被拒絕
+    sales_user = {
+        "id": "uuid-sales",
+        "email": "sales@test.com",
+        "profile": {
+            "id": "uuid-sales",
+            "employee_id": "EMP002",
+            "name": "Sales User",
+            "role": "sales",
+            "status": "active"
+        }
+    }
+    
+    # 覆蓋依賴注入，回傳 sales 使用者
+    from services.auth_service import get_current_user
+    app.dependency_overrides[get_current_user] = lambda: sales_user
+    
+    try:
+        headers = {"Authorization": "Bearer fake-token"}
+        response = await ac.get("/api/audit/", headers=headers)
+        assert response.status_code == 403
+        assert "無權進行此操作" in response.json()["detail"]
+    finally:
+        # 清除 override，恢復原本 setup_dependencies 中設置的 admin 使用者
+        app.dependency_overrides[get_current_user] = lambda: {
+            "id": "uuid-admin",
+            "email": "admin@test.com",
+            "profile": {
+                "id": "uuid-admin",
+                "employee_id": "EMP5590",
+                "name": "Admin User",
+                "role": "admin",
+                "status": "active"
+            }
+        }
+

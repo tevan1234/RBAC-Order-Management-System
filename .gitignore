@@ -19,3 +19,26 @@ order-management-backend/scratch/
 order-management-frontend/node_modules/
 order-management-frontend/.env
 order-management-frontend/.DS_Store
+
+# Testing - 防止不規範的測試文件被提交
+/order-management-backend/test_*.py
+/order-management-backend/scripts/test_*.py
+/order-management-backend/debug_*.py
+
+# Test Coverage
+.coverage
+coverage.xml
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db

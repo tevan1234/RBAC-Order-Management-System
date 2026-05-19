@@ -3,6 +3,9 @@ from services.supabase_client import get_supabase, get_supabase_admin
 from repositories import UserRepository, OrderRepository, CustomerRepository
 from typing import List, Optional, Callable, Any
 import time
+import asyncio
+from services.rate_limit_cache import rate_limit_cache
+from services.audit_service import log_action
 
 # 簡單的記憶體緩存 (方案 B: 60秒 TTL)
 # 格式: {user_id: {"data": profile_dict, "expiry": timestamp}}
@@ -198,11 +201,22 @@ async def require_sales_or_admin(user: dict = Depends(get_current_user)):
 class AuthService:
     @staticmethod
     async def change_password(user_id: str, email: str, current_password: str, new_password: str):
-        """修改使用者密碼"""
+        """修改使用者密碼 (具備防暴力破解的安全機制)"""
+        # 0. 檢查是否處於臨時鎖定狀態
+        is_locked, remaining_seconds = rate_limit_cache.is_locked(user_id)
+        if is_locked:
+            minutes = int(remaining_seconds // 60)
+            seconds = int(remaining_seconds % 60)
+            raise Exception(f"密碼錯誤次數過多，帳號已被臨時鎖定。請於 {minutes} 分 {seconds} 秒後再試。")
+
         supabase = get_supabase()
         admin_supabase = get_supabase_admin()
         repo_admin = UserRepository(admin_supabase)
         
+        # 取得使用者 profile 以獲得 employee_id，以便審計日誌使用
+        profile = repo_admin.get_user_by_id(user_id)
+        employee_id = profile.get("employee_id") if profile else "unknown"
+
         # 1. 驗證舊密碼 (嘗試登入)
         try:
             auth_res = supabase.auth.sign_in_with_password({
@@ -212,9 +226,40 @@ class AuthService:
             if not auth_res.session:
                 raise Exception("目前密碼不正確")
         except Exception:
+            # 密碼驗證失敗，進行失敗計數與退避延遲
+            fail_count, delay = rate_limit_cache.record_failure(user_id)
+            
+            # 記錄密碼修改失敗審計日誌
+            await log_action(
+                employee_id, 
+                "CHANGE_PASSWORD_FAILED", 
+                details={"message": f"Password verification failed. Attempt: {fail_count}", "attempt": fail_count}
+            )
+            
+            # 若觸發鎖定，記錄鎖定日誌
+            if fail_count >= 5:
+                await log_action(
+                    employee_id, 
+                    "ACCOUNT_LOCKED", 
+                    details={"message": "Account locked for 15 minutes due to 5 consecutive password failures."}
+                )
+                
+                # 指數退避延遲 (5 秒)，使用非同步 sleep 避免阻塞事件循環
+                if delay > 0:
+                    await asyncio.sleep(delay)
+                    
+                raise Exception("密碼錯誤次數過多，帳號已被臨時鎖定 15 分鐘。")
+            
+            # 指數退避延遲 (3-4 次失敗為 2 秒)，使用非同步 sleep 避免阻塞事件循環
+            if delay > 0:
+                await asyncio.sleep(delay)
+                
             raise Exception("目前密碼不正確")
 
-        # 2. 使用 Admin 權限更新密碼
+        # 2. 驗證成功，重設快取中的失敗計數
+        rate_limit_cache.reset_failures(user_id)
+
+        # 3. 使用 Admin 權限更新密碼
         res = admin_supabase.auth.admin.update_user_by_id(
             user_id,
             {"password": new_password}

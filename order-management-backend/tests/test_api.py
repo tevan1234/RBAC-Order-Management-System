@@ -116,8 +116,8 @@ async def test_product_crud(ac: AsyncClient):
     headers = {"Authorization": "Bearer fake-token"}
     
     with patch("routers.products.ProductService", spec=True) as mock_service:
-        mock_service.create_product = AsyncMock(return_value={"product_id": "P1", "name": "Prod 1", "price": 10.0})
-        mock_service.get_all_products = AsyncMock(return_value=[{"product_id": "P1", "name": "Prod 1", "price": 10.0}])
+        mock_service.create_product = AsyncMock(return_value={"product_id": "P1", "name": "Prod 1", "price": 10.0, "status": "active"})
+        mock_service.get_all_products = AsyncMock(return_value=[{"product_id": "P1", "name": "Prod 1", "price": 10.0, "status": "active"}])
         
         # Create
         res = await ac.post("/api/products/", json={"product_id": "P1", "name": "Prod 1", "price": 10}, headers=headers)
@@ -146,7 +146,7 @@ async def test_order_flow(ac: AsyncClient):
         assert res.status_code == 200
         
         # Update Status
-        res = await ac.patch("/api/orders/ORD1/status?status=已完成", headers=headers)
+        res = await ac.patch("/api/orders/ORD1/status", json={"status": "已完成"}, headers=headers)
         assert res.status_code == 200
         assert res.json()["status"] == "已完成"
 

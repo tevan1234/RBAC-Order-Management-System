@@ -2,7 +2,7 @@ import os
 import pytest
 from httpx import AsyncClient, ASGITransport
 from main import app
-from unittest.mock import patch
+from unittest.mock import patch, MagicMock
 
 # 註冊一個臨時的 endpoint 用於觸發內部錯誤
 @app.get("/api/test-error")
@@ -81,3 +81,42 @@ async def test_global_exception_handler_production(ac: AsyncClient):
         assert json_data["detail"] == "發生內部錯誤，請聯絡支援團隊"
         assert response.headers.get("access-control-allow-origin") == "http://localhost:3000"
         assert response.headers.get("access-control-allow-credentials") == "true"
+
+@pytest.mark.asyncio
+async def test_rate_limiting_login(ac: AsyncClient):
+    # 測試 /api/auth/login 的速率限制 (限制是 5/minute)
+    # 我們需要 Mock Supabase 回傳，以防真正的登入請求
+    login_data = {"employee_id": "EMP5590", "password": "password123"}
+    
+    with patch("routers.auth.get_supabase") as mock_get_supabase:
+        mock_supabase = MagicMock()
+        mock_get_supabase.return_value = mock_supabase
+        
+        # Mock profile check
+        mock_profile = MagicMock()
+        mock_profile.data = {"email": "admin@test.com", "name": "Admin", "role": "admin", "status": "active"}
+        mock_supabase.table.return_value.select.return_value.eq.return_value.maybe_single.return_value.execute.return_value = mock_profile
+        
+        # Mock auth sign in
+        mock_session = MagicMock()
+        mock_session.session.access_token = "fake-token"
+        mock_supabase.auth.sign_in_with_password.return_value = mock_session
+        
+        # 呼叫直到被限流阻擋 (最多 6 次)
+        limit_triggered = False
+        for _ in range(6):
+            response = await ac.post("/api/auth/login", json=login_data)
+            if response.status_code == 429:
+                limit_triggered = True
+                json_data = response.json()
+                assert json_data["detail"] == "請求過於頻繁，請稍後再試"
+                assert "x-ratelimit-limit" in response.headers
+                assert "x-ratelimit-remaining" in response.headers
+                break
+            else:
+                assert response.status_code == 200
+                assert "x-ratelimit-limit" in response.headers
+                assert "x-ratelimit-remaining" in response.headers
+                
+        assert limit_triggered, "應該要觸發限流阻擋 (429)，但卻順利通過了所有請求"
+

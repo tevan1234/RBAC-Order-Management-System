@@ -1,13 +1,15 @@
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Request, Response
 from models.schemas import RegisterRequest, LoginRequest, PasswordChangeRequest, EmailUpdateRequest
 from services.supabase_client import get_supabase
 from services.auth_service import get_current_user, AuthService
 from services.audit_service import log_action
+from services.rate_limiter import limiter, LIMIT_LOGIN, LIMIT_REGISTER, LIMIT_CHANGE_PASSWORD
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 @router.post("/register")
-async def register(req: RegisterRequest):
+@limiter.limit(LIMIT_REGISTER)
+async def register(request: Request, response: Response, req: RegisterRequest):
     """註冊新使用者，並透過 Trigger 自動建立 Profile"""
     supabase = get_supabase()
     try:
@@ -35,7 +37,8 @@ async def register(req: RegisterRequest):
         raise HTTPException(status_code=400, detail=str(e))
 
 @router.post("/login")
-async def login(req: LoginRequest):
+@limiter.limit(LIMIT_LOGIN)
+async def login(request: Request, response: Response, req: LoginRequest):
     """使用員工代號登入"""
     supabase = get_supabase()
     try:
@@ -88,7 +91,8 @@ async def get_me(current_user: dict = Depends(get_current_user)):
     return current_user
 
 @router.patch("/change-password")
-async def change_password(req: PasswordChangeRequest, user: dict = Depends(get_current_user)):
+@limiter.limit(LIMIT_CHANGE_PASSWORD)
+async def change_password(request: Request, response: Response, req: PasswordChangeRequest, user: dict = Depends(get_current_user)):
     """修改密碼"""
     try:
         # AuthService.change_password 實作在 services/auth_service.py

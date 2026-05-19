@@ -1,15 +1,23 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 import os
 
 # 載入環境變數
 load_dotenv()
 
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+from services.rate_limiter import limiter
+
 # 匯入路由
 from routers import auth, users, products, orders, customers, audit_logs
 
 app = FastAPI(title="Order Management System API")
+app.state.limiter = limiter
+app.add_middleware(SlowAPIMiddleware)
+
 
 # 設定 CORS
 cors_origins_str = os.getenv("CORS_ORIGINS", "")
@@ -33,6 +41,24 @@ app.include_router(products.router, prefix="/api")
 app.include_router(orders.router, prefix="/api")
 app.include_router(customers.router, prefix="/api")
 app.include_router(audit_logs.router, prefix="/api")
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):
+    """
+    自訂速率限制超額異常處理器。
+    回傳 429 狀態碼與繁體中文提示訊息，並注入 X-RateLimit-* 標頭。
+    """
+    response = JSONResponse(
+        status_code=429,
+        content={"detail": "請求過於頻繁，請稍後再試"}
+    )
+    # 注入 X-RateLimit 標頭
+    if hasattr(request.state, "view_rate_limit"):
+        response = request.app.state.limiter._inject_headers(
+            response,
+            request.state.view_rate_limit
+        )
+    return response
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):

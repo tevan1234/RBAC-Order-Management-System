@@ -42,14 +42,14 @@ async def get_customer(customer_id: str, user: dict) -> Dict[str, Any]:
     customer = repo.get_customer_by_id(customer_id)
     
     if not customer:
-        raise HTTPException(status_code=404, detail="找不到該客戶")
+        raise HTTPException(status_code=404, detail="找不到資源或無權限存取")
         
     # 權限檢查邏輯 (與 get_customers 一致)
     if role == "sales":
         admin_ids = await get_admin_employee_ids()
         allowed_owners = [employee_id] + admin_ids
         if customer.get("owner_id") not in allowed_owners:
-            raise HTTPException(status_code=403, detail="您無權查看此客戶")
+            raise HTTPException(status_code=404, detail="找不到資源或無權限存取")
             
     return customer
 
@@ -107,7 +107,7 @@ async def update_customer(customer_id: str, data: Dict[str, Any], user: dict) ->
     res = repo_admin.update_customer(customer_id, update_data)
     
     if not res:
-        raise HTTPException(status_code=404, detail="更新失敗，找不到該客戶")
+        raise HTTPException(status_code=404, detail="找不到資源或無權限存取")
         
     # 紀錄 Log
     await log_action(employee_id, "UPDATE_CUSTOMER", f"Updated customer: {customer_id}")
@@ -124,7 +124,7 @@ async def delete_customer(customer_id: str, user: dict) -> bool:
     # 1. 檢查是否存在
     current_customer = repo_admin.get_customer_by_id(customer_id)
     if not current_customer:
-        raise HTTPException(status_code=404, detail="找不到該客戶")
+        raise HTTPException(status_code=404, detail="找不到資源或無權限存取")
         
     # 2. 執行刪除
     success = repo_admin.delete_customer(customer_id)

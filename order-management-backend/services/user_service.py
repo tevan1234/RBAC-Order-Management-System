@@ -89,7 +89,7 @@ class UserService:
         - 僅限 admin 角色
         """
         if role != "admin":
-            raise HTTPException(status_code=403, detail="權限不足，僅限管理員查看用戶列表")
+            raise HTTPException(status_code=404, detail="找不到資源或無權限存取")
             
         repo = UserService._get_repo(admin=True)
         return repo.get_users()
@@ -114,7 +114,7 @@ class UserService:
         updated_user = repo.update_user(str(target_id), update_dict)
         
         if not updated_user:
-            raise HTTPException(status_code=404, detail="找不到該使用者")
+            raise HTTPException(status_code=404, detail="找不到資源或無權限存取")
             
         # 記錄審計日誌
         await audit_service.log_action(
@@ -152,13 +152,13 @@ class UserService:
         user_id = str(current_user["profile"]["id"])
         
         if user_role != "admin" and user_id != str(target_id):
-            raise HTTPException(status_code=403, detail="權限不足，您僅能查看自己的資料")
+            raise HTTPException(status_code=404, detail="找不到資源或無權限存取")
             
         repo = UserService._get_repo()
         profile = repo.get_user_by_id(str(target_id))
         
         if not profile:
-            raise HTTPException(status_code=404, detail="找不到該使用者設定檔")
+            raise HTTPException(status_code=404, detail="找不到資源或無權限存取")
             
         return profile
 
@@ -175,7 +175,7 @@ class UserService:
         # 1. 獲取用戶資訊以便記錄日誌
         profile = repo_admin.get_user_by_id(str(target_id))
         if not profile:
-            raise HTTPException(status_code=404, detail="找不到該使用者")
+            raise HTTPException(status_code=404, detail="找不到資源或無權限存取")
         
         # 2. 刪除 Auth 使用者 (Supabase 會連動刪除 Profile)
         supabase_admin.auth.admin.delete_user(str(target_id))

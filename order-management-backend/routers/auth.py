@@ -46,10 +46,10 @@ async def login(request: Request, response: Response, req: LoginRequest):
         profile_res = supabase.table("profiles").select("employee_id, email, name, role, status, must_change_password").eq("employee_id", req.employee_id).maybe_single().execute()
         
         if not profile_res or not hasattr(profile_res, 'data') or not profile_res.data:
-            raise HTTPException(status_code=404, detail="員工代號不存在")
+            raise HTTPException(status_code=401, detail="員工代號或密碼錯誤")
         
         if profile_res.data.get("status") == "inactive":
-            raise HTTPException(status_code=403, detail="此帳號已停用，請聯絡管理員")
+            raise HTTPException(status_code=401, detail="員工代號或密碼錯誤")
             
         email = profile_res.data.get("email")
         
@@ -60,10 +60,10 @@ async def login(request: Request, response: Response, req: LoginRequest):
                 "password": req.password
             })
         except Exception as auth_e:
-            raise HTTPException(status_code=401, detail="密碼錯誤")
+            raise HTTPException(status_code=401, detail="員工代號或密碼錯誤")
         
         if not res.session:
-            raise HTTPException(status_code=401, detail="密碼錯誤")
+            raise HTTPException(status_code=401, detail="員工代號或密碼錯誤")
             
         await log_action(req.employee_id, "LOGIN", "User logged in")
         

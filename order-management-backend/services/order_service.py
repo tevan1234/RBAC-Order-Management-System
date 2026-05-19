@@ -57,12 +57,12 @@ class OrderService:
         order = repo.get_order_by_id(order_id)
 
         if not order:
-            raise HTTPException(status_code=404, detail="找不到訂單")
+            raise HTTPException(status_code=404, detail="找不到資源或無權限存取")
 
         if role == "sales" and order.get("owner_id") != employee_id:
-            raise HTTPException(status_code=403, detail="權限不足，您無權查看此訂單")
+            raise HTTPException(status_code=404, detail="找不到資源或無權限存取")
         elif role not in ["admin", "viewer", "sales"]:
-            raise HTTPException(status_code=403, detail="權限不足")
+            raise HTTPException(status_code=404, detail="找不到資源或無權限存取")
 
         return order
 
@@ -202,18 +202,18 @@ class OrderService:
         # 1. 獲取原訂單資訊進行檢查
         current_order = repo.get_order_by_id(order_id)
         if not current_order:
-            raise HTTPException(status_code=404, detail="找不到訂單")
+            raise HTTPException(status_code=404, detail="找不到資源或無權限存取")
 
-        # 2. 狀態機檢查
-        if current_order.get("status") != STATUS_PROCESSING:
-            raise HTTPException(status_code=403, detail=f"訂單狀態為 {current_order.get('status')}，不可修改")
-
-        # 3. RBAC 權限檢查
+        # 2. RBAC 權限檢查（必須在狀態機檢查之前，避免洩露資源存在性）
         if role == "sales":
             if current_order.get("owner_id") != employee_id:
-                raise HTTPException(status_code=403, detail="您無權修改他人的訂單")
+                raise HTTPException(status_code=404, detail="找不到資源或無權限存取")
         elif role != "admin":
-            raise HTTPException(status_code=403, detail="權限不足，無法修改訂單狀態")
+            raise HTTPException(status_code=404, detail="找不到資源或無權限存取")
+
+        # 3. 狀態機檢查
+        if current_order.get("status") != STATUS_PROCESSING:
+            raise HTTPException(status_code=403, detail=f"訂單狀態為 {current_order.get('status')}，不可修改")
 
         # 4. 更新狀態
         updated_order = repo.update_order(order_id, {
@@ -246,13 +246,13 @@ class OrderService:
         current_order = repo.get_order_by_id(order_id)
         
         if not current_order:
-            raise HTTPException(status_code=404, detail="找不到訂單")
+            raise HTTPException(status_code=404, detail="找不到資源或無權限存取")
             
         # 權限檢查
         if role == "sales" and current_order.get("owner_id") != employee_id:
-            raise HTTPException(status_code=403, detail="您無權修改此訂單")
+            raise HTTPException(status_code=404, detail="找不到資源或無權限存取")
         elif role not in ["admin", "sales"]:
-             raise HTTPException(status_code=403, detail="權限不足")
+             raise HTTPException(status_code=404, detail="找不到資源或無權限存取")
 
         # 注入更新時間
         update_data["updated_at"] = datetime.now(timezone.utc).isoformat()

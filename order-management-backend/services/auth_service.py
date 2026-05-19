@@ -69,8 +69,8 @@ def require_role(required_roles: List[str]) -> Callable:
         user_role = user["profile"].get("role")
         if user_role not in required_roles:
             raise HTTPException(
-                status_code=403,
-                detail=f"權限不足。需要角色：{', '.join(required_roles)}，你的角色：{user_role}",
+                status_code=404,
+                detail="找不到資源或無權限存取",
                 headers={"X-Required-Roles": ",".join(required_roles)}
             )
         return user
@@ -92,15 +92,15 @@ def require_permission(permission: str) -> Callable:
         allowed_roles = PERMISSIONS.get(permission, [])
         if user_role not in allowed_roles:
             raise HTTPException(
-                status_code=403,
-                detail=f"無權進行此操作。需要權限：{permission}"
+                status_code=404,
+                detail="找不到資源或無權限存取"
             )
         
         # Viewer 角色額外檢查
         if user_role == 'viewer' and not permission.endswith('_VIEW'):
             raise HTTPException(
-                status_code=403,
-                detail="Viewer 角色為唯讀，無法進行修改操作"
+                status_code=404,
+                detail="找不到資源或無權限存取"
             )
         
         return user
@@ -132,8 +132,8 @@ def require_ownership(
         # Viewer 不允許修改
         if user_role == 'viewer':
             raise HTTPException(
-                status_code=403,
-                detail="Viewer 角色無法進行此操作"
+                status_code=404,
+                detail="找不到資源或無權限存取"
             )
         
         # Sales 需要檢查所有權
@@ -161,7 +161,7 @@ def require_ownership(
                 raise HTTPException(status_code=500, detail="未知資源類型")
             
             if not resource:
-                raise HTTPException(status_code=404, detail="資源不存在")
+                raise HTTPException(status_code=404, detail="找不到資源或無權限存取")
             
             # 檢查所有權
             owner_field = OWNERSHIP_FIELDS.get(resource_type)
@@ -171,8 +171,8 @@ def require_ownership(
             
             if resource.get(owner_field) != compare_id:
                 raise HTTPException(
-                    status_code=403,
-                    detail=f"您無權操作他人的 {resource_type} 資源"
+                    status_code=404,
+                    detail="找不到資源或無權限存取"
                 )
         
         return user
@@ -182,20 +182,20 @@ def require_ownership(
 async def require_admin(user: dict = Depends(get_current_user)):
     """要求 Admin 角色的快捷函數"""
     if user["profile"].get("role") != "admin":
-        raise HTTPException(status_code=403, detail="權限不足，僅限管理員")
+        raise HTTPException(status_code=404, detail="找不到資源或無權限存取")
     return user
 
 async def require_not_readonly(user: dict = Depends(get_current_user)):
     """要求非唯讀角色的快捷函數"""
     if user["profile"].get("role") == "viewer":
-        raise HTTPException(status_code=403, detail="Viewer 角色無法進行此操作")
+        raise HTTPException(status_code=404, detail="找不到資源或無權限存取")
     return user
 
 async def require_sales_or_admin(user: dict = Depends(get_current_user)):
     """驗證是否為 admin 或 sales 權限 (相容性保留)"""
     role = user["profile"].get("role")
     if role not in ["admin", "sales"]:
-        raise HTTPException(status_code=403, detail="權限不足，僅限業務或管理員存取")
+        raise HTTPException(status_code=404, detail="找不到資源或無權限存取")
     return user
 
 class AuthService:

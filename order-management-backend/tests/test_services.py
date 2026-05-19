@@ -71,7 +71,7 @@ async def test_create_user_as_admin_api_call():
         # 1. 檢查重複 (回傳 None)
         # 2. 同步 Profile (回傳 profile dict)
         mock_repo.get_user_by_employee_id.return_value = None
-        mock_repo.get_user_by_id.return_value = {"id": "new-user-uuid", "email": "test@example.com", "employee_id": "E999"}
+        mock_repo.get_user_by_id.return_value = {"id": "new-user-uuid", "email": "test@example.com", "employee_id": "EMP9999"}
         
         # 模擬 Auth Admin API 回傳
         mock_auth_user = MagicMock()
@@ -80,16 +80,16 @@ async def test_create_user_as_admin_api_call():
         
         user_data = UserAdminCreate(
             email="test@example.com",
-            password="password123",
+            password="Password123",
             name="Test User",
-            employee_id="E999",
+            employee_id="EMP9999",
             role="sales"
         )
         
         result = await UserService.create_user_as_admin(user_data, MOCK_ADMIN_USER)
         
         # 驗證 UserRepository 呼叫
-        mock_repo.get_user_by_employee_id.assert_called_with("E999")
+        mock_repo.get_user_by_employee_id.assert_called_with("EMP9999")
         mock_repo.get_user_by_id.assert_called_with("new-user-uuid")
         
         # 驗證 Admin Auth API 呼叫參數
@@ -97,7 +97,7 @@ async def test_create_user_as_admin_api_call():
         args, kwargs = mock_supabase.auth.admin.create_user.call_args
         called_dict = args[0]
         assert called_dict["email"] == "test@example.com"
-        assert called_dict["user_metadata"]["employee_id"] == "E999"
+        assert called_dict["user_metadata"]["employee_id"] == "EMP9999"
         
         # 驗證日誌記錄
         mock_log.assert_called_once()

@@ -580,8 +580,8 @@ async function saveUserRole() {
       showNotification('資料更新成功', 'success');
     } else {
       if (!name) return showNotification('請輸入姓名', 'warning');
-      await saveUser({ employee_id: eid, name, email, role, status: 'active', password: 'test1234' });
-      showNotification('使用者建立成功，預設密碼為 test1234', 'success', 8000); // 延長顯示時間讓使用者看清楚
+      await saveUser({ employee_id: eid, name, email, role, status: 'active', password: 'Test1234' });
+      showNotification('使用者建立成功，預設密碼為 Test1234', 'success', 8000); // 延長顯示時間讓使用者看清楚
     }
     f('userModal')?.classList.remove('active');
     await loadDashboardData();

@@ -92,15 +92,15 @@ async def test_create_user(ac: AsyncClient):
     headers = {"Authorization": "Bearer fake-token"}
     user_data = {
         "email": "new@test.com",
-        "password": "password123",
+        "password": "Password123",
         "name": "New User",
-        "employee_id": "U999",
+        "employee_id": "EMP9999",
         "role": "sales"
     }
     with patch("routers.users.UserService.create_user_as_admin", new_callable=AsyncMock) as mock_create:
         mock_create.return_value = {
             "id": "2f97de8c-c5ed-440f-9274-455fe8389c32",
-            "employee_id": "U999",
+            "employee_id": "EMP9999",
             "name": "New User",
             "email": "new@test.com",
             "role": "sales",
@@ -108,7 +108,7 @@ async def test_create_user(ac: AsyncClient):
         }
         response = await ac.post("/api/users/", json=user_data, headers=headers)
         assert response.status_code == 200
-        assert response.json()["employee_id"] == "U999"
+        assert response.json()["employee_id"] == "EMP9999"
 
 # --- Product Management ---
 @pytest.mark.asyncio

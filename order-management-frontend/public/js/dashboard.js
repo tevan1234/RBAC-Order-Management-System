@@ -1,5 +1,5 @@
 // dashboard.js — API 驅動版本 (重構 V2)
-import { getCurrentUser, logout } from './auth.js';
+import { getCurrentUser, logout, updateCurrentUser } from './auth.js';
 import { isAdmin, canCreateOrder, canCreateCustomer, canEditOrder, canVoidOrder, canCompleteOrder, canEditCustomer, canVoidCustomer, canEditOtherUser, canDeactivateUser, getMenuItems, canCreateProduct, canEditProduct } from './rbac.js';
 import { getOrders, saveOrder as saveOrderApi, updateOrder, updateOrderStatus, getCustomers, saveCustomer as saveCustomerApi, updateCustomer, getProducts, saveProduct as saveProductApi, updateProduct, getUsers, saveUser, updateUser, getLogs } from './data.js';
 import { formatDate, formatDateISO, generateEmployeeId, initDropdown, setDropdownValue, getDropdownValue, showNotification, showConfirm, renderWithTooltip } from './utils.js';
@@ -18,6 +18,28 @@ const currentUser = getCurrentUser();
 function f(id) { return document.getElementById(id); }
 function getF(o, ...keys) { for (const k of keys) { if (o[k] !== undefined && o[k] !== null) return o[k]; } return ''; }
 
+// ── 閒置偵測 (30 分鐘) ──
+let idleTimer = null;
+const IDLE_TIMEOUT = 30 * 60 * 1000; // 30 分鐘 (1800000 毫秒)
+
+function resetIdleTimer() {
+  if (idleTimer) clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => {
+    showNotification('您已閒置超過 30 分鐘，系統將自動登出以保護帳戶安全。', 'warning');
+    setTimeout(() => {
+      logout();
+    }, 2000);
+  }, IDLE_TIMEOUT);
+}
+
+function initIdleDetection() {
+  const events = ['mousedown', 'mousemove', 'keypress', 'scroll', 'touchstart', 'click'];
+  events.forEach(event => {
+    document.addEventListener(event, resetIdleTimer, { passive: true });
+  });
+  resetIdleTimer();
+}
+
 // ── 初始化 ──
 function initDashboard() {
   if (!currentUser) return (window.location.href = 'index.html');
@@ -25,6 +47,7 @@ function initDashboard() {
   updateHeaderUI();
   bindEvents();
   loadDashboardData();
+  initIdleDetection(); // 啟動閒置偵測
   try {
     const p = sessionStorage.getItem('pendingNotification');
     if (p) { const n = JSON.parse(p); showNotification(n.message, n.type); sessionStorage.removeItem('pendingNotification'); }
@@ -757,7 +780,7 @@ async function saveAccountSettings(event) {
     // 更新本地存儲
     const currentUser = getCurrentUser();
     currentUser.email = newEmail;
-    sessionStorage.setItem('currentUser', JSON.stringify(currentUser));
+    updateCurrentUser(currentUser);
     updateHeaderUI();
 
     // 清空密碼欄位

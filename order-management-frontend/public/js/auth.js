@@ -4,6 +4,145 @@
 
 import { apiRequest } from './utils.js';
 
+// 記憶體私有儲存變數 (Memory Storage)
+let _token = null;
+let _currentUser = null;
+let _expiryTimer = null;
+
+// sessionStorage 備援 Key
+const BACKUP_KEY = '_secure_session_state';
+
+// ── 安全混淆輔助函數 ──
+function obfuscate(data) {
+  try {
+    const jsonStr = JSON.stringify(data);
+    const step1 = btoa(unescape(encodeURIComponent(jsonStr)));
+    const step2 = step1.split('').reverse().join('');
+    return btoa(step2);
+  } catch (e) {
+    return null;
+  }
+}
+
+function deobfuscate(str) {
+  try {
+    const step2 = atob(str);
+    const step1 = step2.split('').reverse().join('');
+    const jsonStr = decodeURIComponent(escape(atob(step1)));
+    return JSON.parse(jsonStr);
+  } catch (e) {
+    return null;
+  }
+}
+
+// ── JWT 格式與過期驗證 ──
+function isValidJwt(token) {
+  if (typeof token !== 'string') return false;
+  const parts = token.split('.');
+  if (parts.length !== 3) return false;
+  const base64UrlPattern = /^[A-Za-z0-9-_]+$/;
+  return parts.every(part => base64UrlPattern.test(part));
+}
+
+function getJwtExpiry(token) {
+  try {
+    const payloadPart = token.split('.')[1];
+    const base64 = payloadPart.replace(/-/g, '+').replace(/_/g, '/');
+    const jsonPayload = decodeURIComponent(atob(base64).split('').map(c => {
+      return '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2);
+    }).join(''));
+    const payload = JSON.parse(jsonPayload);
+    return payload.exp ? payload.exp * 1000 : null; // 轉為毫秒
+  } catch (e) {
+    return null;
+  }
+}
+
+export function isTokenExpired(token) {
+  const expiry = getJwtExpiry(token);
+  if (!expiry) return true;
+  return Date.now() >= expiry;
+}
+
+// ── Token 自動過期登出計時器 ──
+function setupTokenExpiryTimer(durationMs) {
+  if (_expiryTimer) clearTimeout(_expiryTimer);
+  if (durationMs > 2147483647) durationMs = 2147483647; // 防止 setTimeout 溢位
+  _expiryTimer = setTimeout(() => {
+    sessionStorage.setItem('pendingNotification', JSON.stringify({
+      message: '您的登入憑證已過期，系統已自動登出。',
+      type: 'warning'
+    }));
+    logout();
+  }, durationMs);
+}
+
+// ── 階段備份與還原機制 ──
+export function saveSessionBackup() {
+  if (_token && _currentUser) {
+    const backupData = {
+      token: _token,
+      user: _currentUser
+    };
+    const obfuscated = obfuscate(backupData);
+    if (obfuscated) {
+      sessionStorage.setItem(BACKUP_KEY, obfuscated);
+    }
+  }
+}
+
+export function restoreSession() {
+  const backup = sessionStorage.getItem(BACKUP_KEY);
+  if (backup) {
+    sessionStorage.removeItem(BACKUP_KEY); // 立即清除以降低被竊取的風險
+    const data = deobfuscate(backup);
+    if (data && data.token && data.user) {
+      if (isValidJwt(data.token)) {
+        const expiry = getJwtExpiry(data.token);
+        const now = Date.now();
+        if (expiry && expiry > now) {
+          _token = data.token;
+          _currentUser = data.user;
+          setupTokenExpiryTimer(expiry - now);
+          return;
+        }
+      }
+    }
+  }
+  _token = null;
+  _currentUser = null;
+}
+
+// ── API 導出介面 ──
+export function getToken() {
+  if (_token) {
+    if (isTokenExpired(_token)) {
+      sessionStorage.setItem('pendingNotification', JSON.stringify({
+        message: '您的登入憑證已過期，系統已自動登出。',
+        type: 'warning'
+      }));
+      logout();
+      return null;
+    }
+    return _token;
+  }
+  return null;
+}
+
+export function getCurrentUser() {
+  return _currentUser;
+}
+
+export function updateCurrentUser(userData) {
+  if (_currentUser) {
+    _currentUser = {
+      ..._currentUser,
+      ...userData
+    };
+    saveSessionBackup();
+  }
+}
+
 /**
  * 處理登入表單提交
  */
@@ -32,9 +171,12 @@ async function handleLogin(event) {
         employeeId: data.user.employee_id
       };
       
-      // 儲存認證資訊
-      sessionStorage.setItem('token', data.access_token);
-      sessionStorage.setItem('currentUser', JSON.stringify(userData));
+      // 儲存認證資訊至記憶體變數
+      _token = data.access_token;
+      _currentUser = userData;
+      
+      // 備份至 sessionStorage 以供頁面跳轉時使用
+      saveSessionBackup();
 
       sessionStorage.setItem('pendingNotification', JSON.stringify({
         message: `歡迎回來，${data.user.name || data.user.employee_id}！`,
@@ -77,21 +219,23 @@ export async function updateEmail(newEmail) {
 }
 
 /**
- * 獲取目前登入使用者 (從 sessionStorage)
- */
-export function getCurrentUser() {
-  const userJson = sessionStorage.getItem('currentUser');
-  return userJson ? JSON.parse(userJson) : null;
-}
-
-/**
  * 登出
  */
 export function logout() {
-  sessionStorage.removeItem('token');
-  sessionStorage.removeItem('currentUser');
+  _token = null;
+  _currentUser = null;
+  if (_expiryTimer) clearTimeout(_expiryTimer);
+  sessionStorage.removeItem(BACKUP_KEY);
   window.location.href = 'index.html';
 }
+
+// ── 初始化階段執行 ──
+restoreSession();
+
+// 監聽 unload 前寫入備份，確保 F5 重整不遺失登入狀態
+window.addEventListener('beforeunload', () => {
+  saveSessionBackup();
+});
 
 // 頁面載入後綁定登入事件
 document.addEventListener('DOMContentLoaded', () => {

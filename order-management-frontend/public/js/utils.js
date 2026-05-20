@@ -142,11 +142,25 @@ export function showNotification(message, type = 'info', duration = 4000) {
   const topOffset = NOTIF_TOP_START + _notifications.length * (NOTIF_HEIGHT + NOTIF_GAP);
   el.style.top = topOffset + 'px';
 
-  el.innerHTML = `
-    <span style="font-size:18px">${iconMap[type] || 'ℹ️'}</span>
-    <span style="flex:1">${message}</span>
-    <button onclick="this.parentElement.remove()" style="background:none;border:none;color:inherit;cursor:pointer;font-size:16px;padding:0 4px">×</button>
-  `;
+  // 徹底改用 DOM API 建立子元素，防止 XSS，並移除 inline click script 以符合 CSP 規範
+  const iconSpan = document.createElement('span');
+  iconSpan.style.fontSize = '18px';
+  iconSpan.textContent = iconMap[type] || 'ℹ️';
+  el.appendChild(iconSpan);
+
+  const textSpan = document.createElement('span');
+  textSpan.style.flex = '1';
+  textSpan.textContent = message; // 使用 textContent 自動進行安全對待
+  el.appendChild(textSpan);
+
+  const closeBtn = document.createElement('button');
+  closeBtn.style.cssText = 'background:none;border:none;color:inherit;cursor:pointer;font-size:16px;padding:0 4px';
+  closeBtn.textContent = '×';
+  closeBtn.addEventListener('click', () => {
+    el.remove();
+    _notifications = _notifications.filter(n => n !== el);
+  });
+  el.appendChild(closeBtn);
 
   document.body.appendChild(el);
   _notifications.push(el);
@@ -187,35 +201,56 @@ export function showConfirm(message, title = '確認操作') {
       display: flex; align-items: center; justify-content: center;
       background: rgba(0,0,0,.6); backdrop-filter: blur(4px);
     `;
-    modal.innerHTML = `
-      <div style="
-        background: var(--bg-card, #1e293b); border-radius: 16px;
-        padding: 32px; max-width: 420px; width: 90%;
-        box-shadow: 0 24px 64px rgba(0,0,0,.5);
-        color: var(--text-primary, #f1f5f9);
-      ">
-        <h3 style="margin:0 0 12px;font-size:18px">${title}</h3>
-        <p style="margin:0 0 24px;color:var(--text-secondary,#94a3b8);line-height:1.6">${message}</p>
-        <div style="display:flex;gap:12px;justify-content:flex-end">
-          <button id="_confirmCancel" style="
-            padding:10px 20px;border-radius:8px;border:1px solid var(--border-color,#334155);
-            background:transparent;color:var(--text-secondary,#94a3b8);cursor:pointer;font-size:14px
-          ">取消</button>
-          <button id="_confirmOk" style="
-            padding:10px 20px;border-radius:8px;border:none;
-            background:var(--accent-error,#ef4444);color:#fff;cursor:pointer;font-size:14px;font-weight:600
-          ">確認</button>
-        </div>
-      </div>
+
+    // 徹底以 DOM API 建立彈窗內容，拒絕 innerHTML 以防堵 DOM 型 XSS
+    const wrapper = document.createElement('div');
+    wrapper.style.cssText = `
+      background: var(--bg-card, #1e293b); border-radius: 16px;
+      padding: 32px; max-width: 420px; width: 90%;
+      box-shadow: 0 24px 64px rgba(0,0,0,.5);
+      color: var(--text-primary, #f1f5f9);
     `;
 
+    const titleEl = document.createElement('h3');
+    titleEl.style.cssText = 'margin:0 0 12px;font-size:18px';
+    titleEl.textContent = title;
+    wrapper.appendChild(titleEl);
+
+    const messageEl = document.createElement('p');
+    messageEl.style.cssText = 'margin:0 0 24px;color:var(--text-secondary,#94a3b8);line-height:1.6';
+    messageEl.textContent = message;
+    wrapper.appendChild(messageEl);
+
+    const btnWrapper = document.createElement('div');
+    btnWrapper.style.cssText = 'display:flex;gap:12px;justify-content:flex-end';
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.id = '_confirmCancel';
+    cancelBtn.style.cssText = `
+      padding:10px 20px;border-radius:8px;border:1px solid var(--border-color,#334155);
+      background:transparent;color:var(--text-secondary,#94a3b8);cursor:pointer;font-size:14px
+    `;
+    cancelBtn.textContent = '取消';
+    btnWrapper.appendChild(cancelBtn);
+
+    const okBtn = document.createElement('button');
+    okBtn.id = '_confirmOk';
+    okBtn.style.cssText = `
+      padding:10px 20px;border-radius:8px;border:none;
+      background:var(--accent-error,#ef4444);color:#fff;cursor:pointer;font-size:14px;font-weight:600
+    `;
+    okBtn.textContent = '確認';
+    btnWrapper.appendChild(okBtn);
+
+    wrapper.appendChild(btnWrapper);
+    modal.appendChild(wrapper);
     document.body.appendChild(modal);
 
-    modal.querySelector('#_confirmOk').addEventListener('click', () => {
+    okBtn.addEventListener('click', () => {
       modal.remove();
       resolve(true);
     });
-    modal.querySelector('#_confirmCancel').addEventListener('click', () => {
+    cancelBtn.addEventListener('click', () => {
       modal.remove();
       resolve(false);
     });
@@ -408,3 +443,50 @@ export function renderWithTooltip(text, data = []) {
     </div>
   `;
 }
+
+// ============================================================
+// 安全與防護工具函式 (XSS 防禦 & 輸入驗證)
+// ============================================================
+
+/**
+ * 對 HTML 敏感字元進行轉義以防止 XSS 注入
+ */
+export function escapeHtml(text) {
+  if (text === null || text === undefined) return '';
+  if (typeof text !== 'string') text = String(text);
+  return text.replace(/[&<>"']/g, function(m) {
+    switch (m) {
+      case '&': return '&amp;';
+      case '<': return '&lt;';
+      case '>': return '&gt;';
+      case '"': return '&quot;';
+      case "'": return '&#039;';
+      default: return m;
+    }
+  });
+}
+
+/**
+ * 驗證 Email 格式
+ */
+export function validateEmail(email) {
+  const re = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+  return re.test(String(email).trim().toLowerCase());
+}
+
+/**
+ * 驗證員工編號格式 (限英數字、底線、連字號，長度 3 至 20，防堵惡意特殊符號)
+ */
+export function validateEmployeeId(id) {
+  const re = /^[a-zA-Z0-9_-]{3,20}$/;
+  return re.test(String(id).trim());
+}
+
+/**
+ * 驗證金額是否合法 (大於等於零的有限數值)
+ */
+export function validateAmount(amount) {
+  const num = Number(amount);
+  return !isNaN(num) && num >= 0 && Number.isFinite(num);
+}
+

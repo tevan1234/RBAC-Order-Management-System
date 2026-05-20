@@ -2,7 +2,7 @@
 import { getCurrentUser, logout, updateCurrentUser } from './auth.js';
 import { isAdmin, canCreateOrder, canCreateCustomer, canEditOrder, canVoidOrder, canCompleteOrder, canEditCustomer, canVoidCustomer, canEditOtherUser, canDeactivateUser, getMenuItems, canCreateProduct, canEditProduct } from './rbac.js';
 import { getOrders, saveOrder as saveOrderApi, updateOrder, updateOrderStatus, getCustomers, saveCustomer as saveCustomerApi, updateCustomer, getProducts, saveProduct as saveProductApi, updateProduct, getUsers, saveUser, updateUser, getLogs } from './data.js';
-import { formatDate, formatDateISO, generateEmployeeId, initDropdown, setDropdownValue, getDropdownValue, showNotification, showConfirm, renderWithTooltip } from './utils.js';
+import { formatDate, formatDateISO, generateEmployeeId, initDropdown, setDropdownValue, getDropdownValue, showNotification, showConfirm, renderWithTooltip, escapeHtml, validateEmail, validateEmployeeId, validateAmount } from './utils.js';
 
 // ── 全域快取 ──
 let cachedOrders = [], cachedCustomers = [], cachedProducts = [], cachedUsers = [], cachedLogs = [];
@@ -68,7 +68,11 @@ function updateHeaderUI() {
 
   if (badgeEl) {
     const role = (currentUser.role || 'viewer').toLowerCase();
-    badgeEl.innerHTML = '<span class=\"badge badge-' + role + '\">' + role.toUpperCase() + '</span>';
+    badgeEl.innerHTML = '';
+    const span = document.createElement('span');
+    span.className = `badge badge-${role}`;
+    span.textContent = role.toUpperCase();
+    badgeEl.appendChild(span);
   }
 }
 
@@ -79,17 +83,27 @@ function renderSidebarMenu() {
   const role = (currentUser.role || 'viewer').toLowerCase();
   const items = getMenuItems(role);
   
-  menuEl.innerHTML = items
-    .map(item => '      <li class=\"menu-item\" data-section=\"' + item.id + '\">        <span class=\"icon\">' + item.icon + '</span> ' + item.label + '      </li>    ').join('');
+  menuEl.innerHTML = '';
+  items.forEach(item => {
+    const li = document.createElement('li');
+    li.className = 'menu-item';
+    li.dataset.section = item.id;
 
-  menuEl.querySelectorAll('.menu-item').forEach(el => {
-    el.addEventListener('click', () => {
-      const s = el.dataset.section;
-      window.location.hash = s;
-      navigateTo(s);
+    const iconSpan = document.createElement('span');
+    iconSpan.className = 'icon';
+    iconSpan.textContent = item.icon;
+    li.appendChild(iconSpan);
+
+    li.appendChild(document.createTextNode(' ' + item.label));
+
+    li.addEventListener('click', () => {
+      window.location.hash = item.id;
+      navigateTo(item.id);
       f('sidebar')?.classList.remove('mobile-active');
       f('sidebarOverlay')?.classList.remove('active');
     });
+
+    menuEl.appendChild(li);
   });
 }
 
@@ -207,8 +221,6 @@ function renderOrdersList() {
 
   let orders = getVisibleOrders(currentUser);
 
-
-
   if (orderSearch.keyword) {
     const kw = orderSearch.keyword.toLowerCase();
     orders = orders.filter(o => {
@@ -240,37 +252,137 @@ function renderOrdersList() {
   updateOrderOverview(orders);
 
   const paged = orders.slice((ordersPage - 1) * PAGE_SIZE, ordersPage * PAGE_SIZE);
-  tbody.innerHTML = paged.map(o => {
+  
+  tbody.innerHTML = '';
+  paged.forEach(o => {
     const sid = getF(o, 'id', 'order_id');
     const sc = o.status === '已完成' ? 'badge-success' : o.status === '處理中' ? 'badge-info' : 'badge-void';
     const prod = cachedProducts.find(p => getF(p, 'product_id', 'productId') === getF(o, 'product_id', 'productId'))?.name || getF(o, 'product_name') || '未知商品';
     const ownerId = getF(o, 'owner_id', 'ownerId');
-    const own = ownerId; // 改為顯示 employeeId
+    const own = ownerId;
     const fin = o.status === '已完成' || o.status === '已作廢';
-    let btn = '';
-    if (!fin) {
-      if (canEditOrder(currentUser, { ownerId })) btn += '<button class=\"btn-sm btn-secondary btn-edit-order\" data-id=\"' + sid + '\">編輯</button>';
-    }
-    const sidWithTooltip = renderWithTooltip(sid, [
+
+    const tr = document.createElement('tr');
+
+    // 1. Order ID Cell with Tooltip (以 DOM API 建立以防止 XSS)
+    const tdId = document.createElement('td');
+    const strong = document.createElement('strong');
+    
+    const tooltipWrapper = document.createElement('div');
+    tooltipWrapper.className = 'tooltip-wrapper';
+
+    const tooltipTrigger = document.createElement('span');
+    tooltipTrigger.className = 'tooltip-trigger';
+    tooltipTrigger.textContent = 'ⓘ';
+
+    const tooltipContent = document.createElement('div');
+    tooltipContent.className = 'tooltip-content';
+
+    const rows = [
       { label: '建立時間', value: formatDate(o.created_at) },
       { label: '最後更新', value: formatDate(o.updated_at) }
-    ]);
+    ];
+    rows.forEach(item => {
+      const rowDiv = document.createElement('div');
+      rowDiv.className = 'tooltip-row';
+
+      const labelSpan = document.createElement('span');
+      labelSpan.className = 'tooltip-label';
+      labelSpan.textContent = item.label + '：';
+
+      const valSpan = document.createElement('span');
+      valSpan.className = 'tooltip-value';
+      valSpan.textContent = item.value;
+
+      rowDiv.appendChild(labelSpan);
+      rowDiv.appendChild(valSpan);
+      tooltipContent.appendChild(rowDiv);
+    });
+
+    const tooltipText = document.createElement('span');
+    tooltipText.className = 'tooltip-text';
+    tooltipText.textContent = sid;
+
+    tooltipWrapper.appendChild(tooltipTrigger);
+    tooltipWrapper.appendChild(tooltipContent);
+    tooltipWrapper.appendChild(tooltipText);
+
+    strong.appendChild(tooltipWrapper);
+    tdId.appendChild(strong);
+    tr.appendChild(tdId);
+
+    // 2. Customer Cell
+    const tdCust = document.createElement('td');
     const custId = getF(o, 'customer_id', 'customerId', 'customer');
     const customerObj = cachedCustomers.find(c => getF(c, 'customer_id', 'customerId') === custId);
     const customerName = customerObj ? (customerObj.name || customerObj.customer_name) : custId;
-    const customerDisplay = custId ? `${customerName}<span class="customer-id-text">（${custId}）</span>` : customerName;
 
-    const ownerCell = role === 'sales' ? '' : '<td>' + own + '</td>';
-    return '<tr><td><strong>' + sidWithTooltip + '</strong></td><td>' + customerDisplay + '</td><td>' + prod + '</td><td style="text-align:right">$' + Number(o.amount || 0).toLocaleString() + '</td><td><span class="badge ' + sc + '\">' + o.status + '</span></td>' + ownerCell + '<td class="actions-cell">' + (btn || '—') + '</td></tr>';
+    tdCust.textContent = customerName;
+    if (custId) {
+      const idSpan = document.createElement('span');
+      idSpan.className = 'customer-id-text';
+      idSpan.textContent = `（${custId}）`;
+      tdCust.appendChild(idSpan);
+    }
+    tr.appendChild(tdCust);
 
-  }).join('');
+    // 3. Product Cell (商品名稱)
+    const tdProd = document.createElement('td');
+    tdProd.textContent = prod;
+    tr.appendChild(tdProd);
+
+    // 4. Amount Cell (金額)
+    const tdAmount = document.createElement('td');
+    tdAmount.style.textAlign = 'right';
+    tdAmount.textContent = '$' + Number(o.amount || 0).toLocaleString();
+    tr.appendChild(tdAmount);
+
+    // 5. Status Cell (狀態)
+    const tdStatus = document.createElement('td');
+    const statusSpan = document.createElement('span');
+    statusSpan.className = `badge ${sc}`;
+    statusSpan.textContent = o.status;
+    tdStatus.appendChild(statusSpan);
+    tr.appendChild(tdStatus);
+
+    // 6. Owner Cell (負責人)
+    if (role !== 'sales') {
+      const tdOwner = document.createElement('td');
+      tdOwner.textContent = own || '';
+      tr.appendChild(tdOwner);
+    }
+
+    // 7. Actions Cell (操作)
+    const tdActions = document.createElement('td');
+    tdActions.className = 'actions-cell';
+    if (!fin && canEditOrder(currentUser, { ownerId })) {
+      const btnEdit = document.createElement('button');
+      btnEdit.className = 'btn-sm btn-secondary btn-edit-order';
+      btnEdit.dataset.id = sid;
+      btnEdit.textContent = '編輯';
+      btnEdit.addEventListener('click', () => openOrderModal(sid));
+      tdActions.appendChild(btnEdit);
+    } else {
+      tdActions.textContent = '—';
+    }
+    tr.appendChild(tdActions);
+
+    tbody.appendChild(tr);
+  });
 
   if (paged.length === 0) {
     const colCount = role === 'sales' ? 6 : 7;
-    tbody.innerHTML = '<tr><td colspan="' + colCount + '" style="text-align:center; padding: 20px; color: var(--text-secondary);">目前沒有任何資料</td></tr>';
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = colCount;
+    td.style.textAlign = 'center';
+    td.style.padding = '20px';
+    td.style.color = 'var(--text-secondary)';
+    td.textContent = '目前沒有任何資料';
+    tr.appendChild(td);
+    tbody.appendChild(tr);
   }
 
-  tbody.querySelectorAll('.btn-edit-order').forEach(b => b.addEventListener('click', () => openOrderModal(b.dataset.id)));
   createPaginator(orders.length, PAGE_SIZE, ordersPage, p => { ordersPage = p; renderOrdersList(); }, 'ordersPaginator');
 }
 
@@ -279,6 +391,7 @@ function openOrderModal(id = null) {
   const amEl = f('orderAmount');
   const custMenu = f('orderCustomerMenu');
   const prodMenu = f('orderProductMenu');
+  
   if (custMenu) {
     const currentOrderId = id;
     let customersToShow = cachedCustomers.filter(c => (c.status || 'active') === 'active');
@@ -295,13 +408,26 @@ function openOrderModal(id = null) {
       }
     }
 
-    custMenu.innerHTML = customersToShow.map(c => {
+    custMenu.innerHTML = '';
+    customersToShow.forEach(c => {
       const cid = getF(c, 'customer_id', 'customerId');
       const isInactive = (c.status || 'active') !== 'active';
       const name = (c.name || c.customer_name) + (isInactive ? ' (已停用)' : '');
-      return `<li class="dropdown-item" data-value="${cid}">${name}<span class="customer-id-text">（${cid}）</span></li>`;
-    }).join('');
+
+      const li = document.createElement('li');
+      li.className = 'dropdown-item';
+      li.dataset.value = cid;
+      li.textContent = name;
+
+      const span = document.createElement('span');
+      span.className = 'customer-id-text';
+      span.textContent = `（${cid}）`;
+
+      li.appendChild(span);
+      custMenu.appendChild(li);
+    });
   }
+  
   if (prodMenu) {
     const currentOrderId = id;
     let productsToShow = cachedProducts.filter(p => (p.status || 'active') === 'active');
@@ -318,11 +444,17 @@ function openOrderModal(id = null) {
       }
     }
 
-    prodMenu.innerHTML = productsToShow.map(p => {
+    prodMenu.innerHTML = '';
+    productsToShow.forEach(p => {
       const isInactive = (p.status || 'active') !== 'active';
       const label = p.name + (isInactive ? ' (已停用)' : '') + ' - $' + p.price;
-      return '<li class="dropdown-item" data-value="' + getF(p, 'product_id', 'productId') + '\">' + label + '</li>';
-    }).join('');
+
+      const li = document.createElement('li');
+      li.className = 'dropdown-item';
+      li.dataset.value = getF(p, 'product_id', 'productId');
+      li.textContent = label;
+      prodMenu.appendChild(li);
+    });
   }
 
   initDropdown('orderCustomerDropdown', null, true);
@@ -357,9 +489,11 @@ async function saveOrder() {
   const customerId = getDropdownValue('orderCustomerDropdown');
   const productId = getDropdownValue('orderProductDropdown');
   const status = getDropdownValue('orderStatusDropdown');
-  const amount = Number(f('orderAmount')?.value);
+  const amountInput = f('orderAmount')?.value;
   
-  if (!customerId || !productId || !amount) return showNotification('請完整填寫資訊', 'warning');
+  if (!customerId || !productId || amountInput === '') return showNotification('請完整填寫資訊', 'warning');
+  if (!validateAmount(amountInput)) return showNotification('請輸入合法的金額數值', 'warning');
+  const amount = Number(amountInput);
   
   const originalText = btn.textContent;
   btn.disabled = true;
@@ -427,34 +561,99 @@ function renderCustomersList() {
     custs = custs.filter(c => String(getF(c, customerSearch.field, toSnake(customerSearch.field))).toLowerCase().includes(kw));
   }
   const paged = custs.slice((customersPage - 1) * PAGE_SIZE, customersPage * PAGE_SIZE);
-  tbody.innerHTML = paged.map(c => {
+  
+  tbody.innerHTML = '';
+  paged.forEach(c => {
     const cid = getF(c, 'customer_id', 'customerId');
     const bc = c.status === 'active' ? 'badge-success' : 'badge-secondary';
     const oid = getF(c, 'owner_id', 'ownerId');
     
-    // 內容顯示規則
-    let own = oid;
+    const tr = document.createElement('tr');
+
+    // 1. Customer ID Cell
+    const tdId = document.createElement('td');
+    const strong = document.createElement('strong');
+    strong.textContent = cid;
+    tdId.appendChild(strong);
+    tr.appendChild(tdId);
+
+    // 2. Customer Name Cell
+    const tdName = document.createElement('td');
+    tdName.textContent = c.name || '';
+    tr.appendChild(tdName);
+
+    // 3. Email Cell
+    const tdEmail = document.createElement('td');
+    tdEmail.textContent = c.email || '';
+    tr.appendChild(tdEmail);
+
+    // 4. Owner Cell
+    const tdOwner = document.createElement('td');
+    tdOwner.style.textAlign = 'center';
     if (role === 'sales') {
       const myId = currentUser.employeeId || currentUser.employee_id;
+      const span = document.createElement('span');
       if (oid === myId) {
-        own = '<span class="badge badge-my-customer">我的客戶</span>';
+        span.className = 'badge badge-my-customer';
+        span.textContent = '我的客戶';
       } else {
-        own = '<span class="badge badge-public-customer">公共客戶</span>';
+        span.className = 'badge badge-public-customer';
+        span.textContent = '公共客戶';
       }
+      tdOwner.appendChild(span);
+    } else {
+      tdOwner.textContent = oid || '';
     }
+    tr.appendChild(tdOwner);
 
-    let btn = '';
-    if (canEditCustomer(currentUser, { ownerId: oid })) btn += '<button class=\"btn-sm btn-secondary btn-edit-customer\" data-id=\"' + cid + '\">編輯</button>';
-    const customerDisplay = c.name || '';
-    
-    return '<tr><td><strong>' + cid + '</strong></td><td>' + customerDisplay + '</td><td>' + (c.email || '') + '</td><td style=\"text-align:center\">' + own + '</td><td><span class=\"badge ' + bc + '\">' + c.status + '</span></td><td>' + formatDate(c.created_at) + '</td><td>' + formatDate(c.updated_at) + '</td><td class=\"actions-cell\">' + (btn || '—') + '</td></tr>';
+    // 5. Status Cell
+    const tdStatus = document.createElement('td');
+    const statusSpan = document.createElement('span');
+    statusSpan.className = `badge ${bc}`;
+    statusSpan.textContent = c.status;
+    tdStatus.appendChild(statusSpan);
+    tr.appendChild(tdStatus);
 
-  }).join('');
+    // 6. Created At Cell
+    const tdCreated = document.createElement('td');
+    tdCreated.textContent = formatDate(c.created_at);
+    tr.appendChild(tdCreated);
+
+    // 7. Updated At Cell
+    const tdUpdated = document.createElement('td');
+    tdUpdated.textContent = formatDate(c.updated_at);
+    tr.appendChild(tdUpdated);
+
+    // 8. Actions Cell
+    const tdActions = document.createElement('td');
+    tdActions.className = 'actions-cell';
+    if (canEditCustomer(currentUser, { ownerId: oid })) {
+      const btnEdit = document.createElement('button');
+      btnEdit.className = 'btn-sm btn-secondary btn-edit-customer';
+      btnEdit.dataset.id = cid;
+      btnEdit.textContent = '編輯';
+      btnEdit.addEventListener('click', () => openCustomerModal(cid));
+      tdActions.appendChild(btnEdit);
+    } else {
+      tdActions.textContent = '—';
+    }
+    tr.appendChild(tdActions);
+
+    tbody.appendChild(tr);
+  });
   
   if (paged.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; padding: 20px; color: var(--text-secondary);">目前沒有任何資料</td></tr>';
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 8;
+    td.style.textAlign = 'center';
+    td.style.padding = '20px';
+    td.style.color = 'var(--text-secondary)';
+    td.textContent = '目前沒有任何資料';
+    tr.appendChild(td);
+    tbody.appendChild(tr);
   }
-  tbody.querySelectorAll('.btn-edit-customer').forEach(b => b.addEventListener('click', () => openCustomerModal(b.dataset.id)));
+  
   createPaginator(custs.length, PAGE_SIZE, customersPage, p => { customersPage = p; renderCustomersList(); }, 'customersPaginator');
 }
 
@@ -486,6 +685,7 @@ async function saveCustomer() {
   const email = f('customerEmail')?.value.trim();
   const status = getDropdownValue('customerStatusDropdown');
   if (!name || !email) return showNotification('請填寫完整資訊', 'warning');
+  if (!validateEmail(email)) return showNotification('請輸入合法的 Email 格式', 'warning');
   try {
     if (id) {
       const updateData = { name, email };
@@ -516,18 +716,90 @@ function renderUsersList() {
     users = users.filter(u => String(getF(u, userSearch.field, toSnake(userSearch.field))).toLowerCase().includes(kw));
   }
   const paged = users.slice((usersPage - 1) * PAGE_SIZE, usersPage * PAGE_SIZE);
-  tbody.innerHTML = paged.map(u => {
+  
+  tbody.innerHTML = '';
+  paged.forEach(u => {
     const uid = getF(u, 'employee_id', 'employeeId');
     const isSelf = uid === (currentUser.employeeId || currentUser.employee_id);
-    let btn = '';
-    if (!isSelf && canEditOtherUser(currentUser, { employeeId: uid })) btn += '<button class=\"btn-sm btn-secondary btn-edit-user\" data-id=\"' + uid + '\">編輯</button>';
-    return '<tr><td><strong>' + uid + '</strong>' + (isSelf ? ' <span class=\"badge badge-info\" style=\"font-size:10px\">您</span>' : '') + '</td><td>' + (u.name || '') + '</td><td>' + (u.email || '') + '</td><td><span class=\"badge badge-' + u.role + '\">' + (u.role || '').toUpperCase() + '</span></td><td><span class=\"badge ' + (u.status === 'active' ? 'badge-success' : 'badge-secondary') + '\">' + u.status + '</span></td><td>' + formatDate(u.updated_at) + '</td><td class=\"actions-cell\">' + (btn || '—') + '</td></tr>';
-  }).join('');
+    
+    const tr = document.createElement('tr');
+
+    // 1. Employee ID Cell
+    const tdId = document.createElement('td');
+    const strong = document.createElement('strong');
+    strong.textContent = uid;
+    tdId.appendChild(strong);
+    if (isSelf) {
+      const selfSpan = document.createElement('span');
+      selfSpan.className = 'badge badge-info';
+      selfSpan.style.fontSize = '10px';
+      selfSpan.textContent = '您';
+      tdId.appendChild(document.createTextNode(' '));
+      tdId.appendChild(selfSpan);
+    }
+    tr.appendChild(tdId);
+
+    // 2. Name Cell
+    const tdName = document.createElement('td');
+    tdName.textContent = u.name || '';
+    tr.appendChild(tdName);
+
+    // 3. Email Cell
+    const tdEmail = document.createElement('td');
+    tdEmail.textContent = u.email || '';
+    tr.appendChild(tdEmail);
+
+    // 4. Role Cell
+    const tdRole = document.createElement('td');
+    const roleSpan = document.createElement('span');
+    roleSpan.className = `badge badge-${u.role}`;
+    roleSpan.textContent = (u.role || '').toUpperCase();
+    tdRole.appendChild(roleSpan);
+    tr.appendChild(tdRole);
+
+    // 5. Status Cell
+    const tdStatus = document.createElement('td');
+    const statusSpan = document.createElement('span');
+    statusSpan.className = `badge ${u.status === 'active' ? 'badge-success' : 'badge-secondary'}`;
+    statusSpan.textContent = u.status;
+    tdStatus.appendChild(statusSpan);
+    tr.appendChild(tdStatus);
+
+    // 6. Updated At Cell
+    const tdUpdated = document.createElement('td');
+    tdUpdated.textContent = formatDate(u.updated_at);
+    tr.appendChild(tdUpdated);
+
+    // 7. Actions Cell
+    const tdActions = document.createElement('td');
+    tdActions.className = 'actions-cell';
+    if (!isSelf && canEditOtherUser(currentUser, { employeeId: uid })) {
+      const btnEdit = document.createElement('button');
+      btnEdit.className = 'btn-sm btn-secondary btn-edit-user';
+      btnEdit.dataset.id = uid;
+      btnEdit.textContent = '編輯';
+      btnEdit.addEventListener('click', () => openUserModal(uid));
+      tdActions.appendChild(btnEdit);
+    } else {
+      tdActions.textContent = '—';
+    }
+    tr.appendChild(tdActions);
+
+    tbody.appendChild(tr);
+  });
   
   if (paged.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding: 20px; color: var(--text-secondary);">目前沒有任何資料</td></tr>';
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 7;
+    td.style.textAlign = 'center';
+    td.style.padding = '20px';
+    td.style.color = 'var(--text-secondary)';
+    td.textContent = '目前沒有任何資料';
+    tr.appendChild(td);
+    tbody.appendChild(tr);
   }
-  tbody.querySelectorAll('.btn-edit-user').forEach(b => b.addEventListener('click', () => openUserModal(b.dataset.id)));
+  
   createPaginator(users.length, PAGE_SIZE, usersPage, p => { usersPage = p; renderUsersList(); }, 'usersPaginator');
 }
 
@@ -570,6 +842,9 @@ async function saveUserRole() {
   const status = getDropdownValue('userStatusDropdown');
   if (!eid || !role) return;
 
+  if (!validateEmployeeId(eid)) return showNotification('員工編號格式不合法', 'warning');
+  if (email && !validateEmail(email)) return showNotification('請輸入合法的 Email 格式', 'warning');
+
   const existingUser = cachedUsers.find(u => getF(u, 'employee_id', 'employeeId') === eid);
   const isEdit = !!existingUser;
 
@@ -599,20 +874,75 @@ function renderProductsList() {
     prods = prods.filter(p => String(getF(p, productSearch.field, toSnake(productSearch.field))).toLowerCase().includes(kw));
   }
   const paged = prods.slice((productsPage - 1) * PAGE_SIZE, productsPage * PAGE_SIZE);
-  tbody.innerHTML = paged.map(p => {
+  
+  tbody.innerHTML = '';
+  paged.forEach(p => {
     const pid = getF(p, 'product_id', 'productId');
     const bc = p.status === 'active' ? 'badge-success' : 'badge-secondary';
-    let btn = '';
+    
+    const tr = document.createElement('tr');
+
+    // 1. ID Cell
+    const tdId = document.createElement('td');
+    const strong = document.createElement('strong');
+    strong.textContent = pid;
+    tdId.appendChild(strong);
+    tr.appendChild(tdId);
+
+    // 2. Name Cell
+    const tdName = document.createElement('td');
+    tdName.textContent = p.name || '';
+    tr.appendChild(tdName);
+
+    // 3. Price Cell
+    const tdPrice = document.createElement('td');
+    tdPrice.style.textAlign = 'right';
+    tdPrice.textContent = '$' + Number(p.price || 0).toLocaleString();
+    tr.appendChild(tdPrice);
+
+    // 4. Status Cell
+    const tdStatus = document.createElement('td');
+    const statusSpan = document.createElement('span');
+    statusSpan.className = `badge ${bc}`;
+    statusSpan.textContent = p.status || 'active';
+    tdStatus.appendChild(statusSpan);
+    tr.appendChild(tdStatus);
+
+    // 5. Updated At Cell
+    const tdUpdated = document.createElement('td');
+    tdUpdated.textContent = formatDate(p.updated_at);
+    tr.appendChild(tdUpdated);
+
+    // 6. Actions Cell
+    const tdActions = document.createElement('td');
+    tdActions.className = 'actions-cell';
     if (canEditProduct(currentUser)) {
-      btn += '<button class=\"btn-sm btn-secondary btn-edit-product\" data-id=\"' + pid + '\">編輯</button>';
+      const btnEdit = document.createElement('button');
+      btnEdit.className = 'btn-sm btn-secondary btn-edit-product';
+      btnEdit.dataset.id = pid;
+      btnEdit.textContent = '編輯';
+      btnEdit.addEventListener('click', () => openProductModal(pid));
+      tdActions.appendChild(btnEdit);
+    } else {
+      tdActions.textContent = '—';
     }
-    return '<tr><td><strong>' + pid + '</strong></td><td>' + p.name + '</td><td style=\"text-align:right\">$' + Number(p.price || 0).toLocaleString() + '</td><td><span class=\"badge ' + bc + '\">' + (p.status || 'active') + '</span></td><td>' + formatDate(p.updated_at) + '</td><td class=\"actions-cell\">' + (btn || '—') + '</td></tr>';
-  }).join('');
+    tr.appendChild(tdActions);
+
+    tbody.appendChild(tr);
+  });
   
   if (paged.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding: 20px; color: var(--text-secondary);">目前沒有任何資料</td></tr>';
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 5;
+    td.style.textAlign = 'center';
+    td.style.padding = '20px';
+    td.style.color = 'var(--text-secondary)';
+    td.textContent = '目前沒有任何資料';
+    tr.appendChild(td);
+    tbody.appendChild(tr);
   }
-  tbody.querySelectorAll('.btn-edit-product').forEach(b => b.addEventListener('click', () => openProductModal(b.dataset.id)));
+  
   createPaginator(prods.length, PAGE_SIZE, productsPage, p => { productsPage = p; renderProductsList(); }, 'productsPaginator');
 }
 
@@ -648,9 +978,11 @@ function openProductModal(id = null) {
 async function saveProduct() {
   const hiddenId = f('modal_product_id_hidden')?.value;
   const name = f('productName')?.value.trim();
-  const price = Number(f('productPrice')?.value);
+  const priceInput = f('productPrice')?.value;
 
-  if (!name || isNaN(price)) return showNotification('請填寫完整資訊', 'warning');
+  if (!name || priceInput === '') return showNotification('請填寫完整資訊', 'warning');
+  if (!validateAmount(priceInput)) return showNotification('請輸入合法的商品價格', 'warning');
+  const price = Number(priceInput);
 
   try {
     if (hiddenId) {
@@ -685,7 +1017,9 @@ function renderAuditLogsList() {
     });
   }
   const paged = logs.slice((logsPage - 1) * PAGE_SIZE, logsPage * PAGE_SIZE);
-  tbody.innerHTML = paged.map(l => {
+  
+  tbody.innerHTML = '';
+  paged.forEach(l => {
     const action = getF(l, 'action', 'action_type');
     const operator = getF(l, 'operator_id', 'operatorId', 'user_id', 'userId') || '-';
     
@@ -696,9 +1030,7 @@ function renderAuditLogsList() {
       if (typeof rawTarget === 'string' && (rawTarget.startsWith('{') || rawTarget.startsWith('['))) {
         try {
           const details = JSON.parse(rawTarget);
-          // 優先顯示主要 ID
           targetDisplay = details.order_id || details.customer_id || details.employee_id || details.product_id || details.id || rawTarget;
-          // 如果結果還是物件，則轉回字串 (保險處理)
           if (typeof targetDisplay === 'object') targetDisplay = JSON.stringify(targetDisplay);
         } catch (e) {
           targetDisplay = rawTarget;
@@ -708,11 +1040,53 @@ function renderAuditLogsList() {
       }
     }
 
-    return '<tr><td>' + getF(l, 'id', 'log_id') + '</td><td><span class=\"badge\">' + action + '</span></td><td><strong>' + operator + '</strong></td><td>' + targetDisplay + '</td><td><small>' + formatDate(l.timestamp) + '</small></td></tr>';
-  }).join('');
+    const tr = document.createElement('tr');
+
+    // 1. Log ID Cell
+    const tdId = document.createElement('td');
+    tdId.textContent = getF(l, 'id', 'log_id') || '';
+    tr.appendChild(tdId);
+
+    // 2. Action Cell
+    const tdAction = document.createElement('td');
+    const actionSpan = document.createElement('span');
+    actionSpan.className = 'badge';
+    actionSpan.textContent = action || '';
+    tdAction.appendChild(actionSpan);
+    tr.appendChild(tdAction);
+
+    // 3. Operator Cell
+    const tdOperator = document.createElement('td');
+    const opStrong = document.createElement('strong');
+    opStrong.textContent = operator;
+    tdOperator.appendChild(opStrong);
+    tr.appendChild(tdOperator);
+
+    // 4. Target Cell
+    const tdTarget = document.createElement('td');
+    tdTarget.textContent = targetDisplay;
+    tr.appendChild(tdTarget);
+
+    // 5. Timestamp Cell
+    const tdTimestamp = document.createElement('td');
+    const timeSmall = document.createElement('small');
+    timeSmall.textContent = formatDate(l.timestamp);
+    tdTimestamp.appendChild(timeSmall);
+    tr.appendChild(tdTimestamp);
+
+    tbody.appendChild(tr);
+  });
   
   if (paged.length === 0) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center; padding: 20px; color: var(--text-secondary);">目前沒有任何資料</td></tr>';
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 5;
+    td.style.textAlign = 'center';
+    td.style.padding = '20px';
+    td.style.color = 'var(--text-secondary)';
+    td.textContent = '目前沒有任何資料';
+    tr.appendChild(td);
+    tbody.appendChild(tr);
   }
   createPaginator(logs.length, PAGE_SIZE, logsPage, p => { logsPage = p; renderAuditLogsList(); }, 'auditLogsPaginator');
 }
@@ -753,6 +1127,7 @@ async function saveAccountSettings(event) {
 
     // 1. 處理 Email 更新
     if (newEmail !== currentEmail) {
+      if (!validateEmail(newEmail)) return showNotification('請輸入合法的 Email 格式', 'warning');
       const { updateEmail } = await import('./auth.js');
       await updateEmail(newEmail);
       currentUser.email = newEmail;
@@ -798,15 +1173,48 @@ async function saveAccountSettings(event) {
 function createPaginator(total, size, curr, onChange, containerId) {
   const c = f(containerId); if (!c) return;
   const pc = Math.ceil(total / size);
-  if (pc <= 1) { c.innerHTML = ''; return; }
-  let h = '<button class=\"btn-pager\" ' + (curr === 1 ? 'disabled' : '') + ' data-page=\"' + (curr - 1) + '\">上一頁</button>';
-  for (let i = 1; i <= pc; i++) {
-    if (i === 1 || i === pc || Math.abs(i - curr) <= 1) h += '<button class=\"btn-pager ' + (i === curr ? 'active' : '') + '\" data-page=\"' + i + '\">' + i + '</button>';
-    else if (Math.abs(i - curr) === 2) h += '<span class=\"pager-ellipsis\">…</span>';
+  c.innerHTML = '';
+  if (pc <= 1) return;
+
+  // 上一頁按鈕
+  const prevBtn = document.createElement('button');
+  prevBtn.className = 'btn-pager';
+  prevBtn.textContent = '上一頁';
+  if (curr === 1) {
+    prevBtn.disabled = true;
+  } else {
+    prevBtn.addEventListener('click', () => onChange(curr - 1));
   }
-  h += '<button class=\"btn-pager\" ' + (curr === pc ? 'disabled' : '') + ' data-page=\"' + (curr + 1) + '\">下一頁</button>';
-  c.innerHTML = h;
-  c.querySelectorAll('.btn-pager:not([disabled])').forEach(b => b.addEventListener('click', () => onChange(Number(b.dataset.page))));
+  c.appendChild(prevBtn);
+
+  // 頁碼與省略號
+  for (let i = 1; i <= pc; i++) {
+    if (i === 1 || i === pc || Math.abs(i - curr) <= 1) {
+      const pageBtn = document.createElement('button');
+      pageBtn.className = `btn-pager ${i === curr ? 'active' : ''}`;
+      pageBtn.textContent = i;
+      if (i !== curr) {
+        pageBtn.addEventListener('click', () => onChange(i));
+      }
+      c.appendChild(pageBtn);
+    } else if (Math.abs(i - curr) === 2) {
+      const ellipsis = document.createElement('span');
+      ellipsis.className = 'pager-ellipsis';
+      ellipsis.textContent = '…';
+      c.appendChild(ellipsis);
+    }
+  }
+
+  // 下一頁按鈕
+  const nextBtn = document.createElement('button');
+  nextBtn.className = 'btn-pager';
+  nextBtn.textContent = '下一頁';
+  if (curr === pc) {
+    nextBtn.disabled = true;
+  } else {
+    nextBtn.addEventListener('click', () => onChange(curr + 1));
+  }
+  c.appendChild(nextBtn);
 }
 
 // ── 事件綁定 ──

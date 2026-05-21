@@ -488,7 +488,7 @@ async def test_generate_report_max_retries_fail(ac: AsyncClient):
 
             # 應回傳 502 Bad Gateway
             assert response.status_code == 502
-            assert "AI 分析引擎暫時無法使用" in response.json()["detail"]
+            assert "AI 分析服務目前忙碌中，請稍後再試。" in response.json()["detail"]
             
             # 應嘗試呼叫過 3 次 (嘗試 + 2次重試)
             assert mock_model.generate_content_async.call_count == 3

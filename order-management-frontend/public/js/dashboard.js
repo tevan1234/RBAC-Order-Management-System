@@ -51,7 +51,7 @@ function initDashboard() {
   try {
     const p = sessionStorage.getItem('pendingNotification');
     if (p) { const n = JSON.parse(p); showNotification(n.message, n.type); sessionStorage.removeItem('pendingNotification'); }
-    
+
     // 初次登入提醒
     if (currentUser.must_change_password) {
       setTimeout(() => {
@@ -82,7 +82,7 @@ function renderSidebarMenu() {
 
   const role = (currentUser.role || 'viewer').toLowerCase();
   const items = getMenuItems(role);
-  
+
   menuEl.innerHTML = '';
   items.forEach(item => {
     const li = document.createElement('li');
@@ -130,12 +130,12 @@ async function loadDashboardData() {
 }
 
 // ── 導覽 ──
-function navigateTo(section) {
+async function navigateTo(section) {
   document.querySelectorAll('.section-content').forEach(s => s.classList.remove('active'));
   document.getElementById('section-' + section)?.classList.add('active');
   document.querySelectorAll('.menu-item').forEach(el => el.classList.toggle('active', el.dataset.section === section));
 
-  const titles = { dashboard: '儀表板', orders: '訂單管理', customers: '客戶管理', users: '使用者管理', auditlogs: '操作紀錄', 'change-password': '帳戶設定' };
+  const titles = { dashboard: '儀表板', orders: '訂單管理', customers: '客戶管理', users: '使用者管理', auditlogs: '操作紀錄', 'change-password': '帳戶設定', analytics: '銷售分析' };
   const titleEl = f('currentPageTitle');
   if (titleEl && titles[section]) titleEl.textContent = titles[section];
 
@@ -180,9 +180,22 @@ function navigateTo(section) {
     products: renderProductsList,
     users: renderUsersList,
     auditlogs: renderAuditLogsList,
-    'change-password': renderAccountSettings
+    'change-password': renderAccountSettings,
+    analytics: async () => {
+      if (!window.analyticsModuleLoaded) {
+        await import('./analytics-module.js');
+        window.analyticsModuleLoaded = true;
+      }
+      window.renderAnalyticsSection();
+    }
   };
-  if (map[section]) map[section]();
+  if (map[section]) {
+    if (section === 'analytics') {
+      await map[section]();
+    } else {
+      map[section]();
+    }
+  }
 }
 
 function updateOverviewStats() {
@@ -207,7 +220,7 @@ function updateOrderOverview(orders) {
 
   const activeOrders = orders.length - voidCount;
   const progress = orders.length > 0 ? Math.round((doneCount / (activeOrders || 1)) * 100) : 0;
-  
+
   if (f('overviewProgressFill')) f('overviewProgressFill').style.width = progress + '%';
   if (f('overviewProgressLabel')) f('overviewProgressLabel').textContent = '完成率 ' + progress + '%';
 }
@@ -252,7 +265,7 @@ function renderOrdersList() {
   updateOrderOverview(orders);
 
   const paged = orders.slice((ordersPage - 1) * PAGE_SIZE, ordersPage * PAGE_SIZE);
-  
+
   tbody.innerHTML = '';
   paged.forEach(o => {
     const sid = getF(o, 'id', 'order_id');
@@ -267,7 +280,7 @@ function renderOrdersList() {
     // 1. Order ID Cell with Tooltip (以 DOM API 建立以防止 XSS)
     const tdId = document.createElement('td');
     const strong = document.createElement('strong');
-    
+
     const tooltipWrapper = document.createElement('div');
     tooltipWrapper.className = 'tooltip-wrapper';
 
@@ -391,7 +404,7 @@ function openOrderModal(id = null) {
   const amEl = f('orderAmount');
   const custMenu = f('orderCustomerMenu');
   const prodMenu = f('orderProductMenu');
-  
+
   if (custMenu) {
     const currentOrderId = id;
     let customersToShow = cachedCustomers.filter(c => (c.status || 'active') === 'active');
@@ -427,11 +440,11 @@ function openOrderModal(id = null) {
       custMenu.appendChild(li);
     });
   }
-  
+
   if (prodMenu) {
     const currentOrderId = id;
     let productsToShow = cachedProducts.filter(p => (p.status || 'active') === 'active');
-    
+
     // 如果是編輯模式，確保目前訂單的商品（即使已停用）也能顯示在清單中
     if (currentOrderId) {
       const o = cachedOrders.find(x => getF(x, 'id', 'order_id') === currentOrderId);
@@ -484,21 +497,21 @@ function openOrderModal(id = null) {
 async function saveOrder() {
   const btn = f('saveOrderBtn');
   if (btn.disabled) return;
-  
+
   const id = f('orderId')?.value;
   const customerId = getDropdownValue('orderCustomerDropdown');
   const productId = getDropdownValue('orderProductDropdown');
   const status = getDropdownValue('orderStatusDropdown');
   const amountInput = f('orderAmount')?.value;
-  
+
   if (!customerId || !productId || amountInput === '') return showNotification('請完整填寫資訊', 'warning');
   if (!validateAmount(amountInput)) return showNotification('請輸入合法的金額數值', 'warning');
   const amount = Number(amountInput);
-  
+
   const originalText = btn.textContent;
   btn.disabled = true;
   btn.textContent = '儲存中...';
-  
+
   try {
     if (id) {
       // 編輯訂單：僅刷新訂單列表
@@ -519,10 +532,10 @@ async function saveOrder() {
       renderOrdersList();
       renderCustomersList();
     }
-  } catch (e) { 
+  } catch (e) {
     // 如果是競爭失敗的訊息，延長顯示時間
     const duration = e.message.includes('已被其他同事分派') ? 8000 : 4000;
-    showNotification('儲存失敗：' + e.message, 'error', duration); 
+    showNotification('儲存失敗：' + e.message, 'error', duration);
     // 即使失敗也重新整理資料，以確保客戶歸屬狀態正確
     await loadDashboardData();
   } finally {
@@ -549,7 +562,7 @@ function renderCustomersList() {
   const tbody = f('customersTableBody'); if (!tbody) return;
   const headerEl = f('customerOwnerHeader');
   const role = (currentUser.role || 'viewer').toLowerCase();
-  
+
   // 更新標題
   if (headerEl) {
     headerEl.textContent = role === 'sales' ? '客戶歸屬' : '負責人';
@@ -561,13 +574,13 @@ function renderCustomersList() {
     custs = custs.filter(c => String(getF(c, customerSearch.field, toSnake(customerSearch.field))).toLowerCase().includes(kw));
   }
   const paged = custs.slice((customersPage - 1) * PAGE_SIZE, customersPage * PAGE_SIZE);
-  
+
   tbody.innerHTML = '';
   paged.forEach(c => {
     const cid = getF(c, 'customer_id', 'customerId');
     const bc = c.status === 'active' ? 'badge-success' : 'badge-secondary';
     const oid = getF(c, 'owner_id', 'ownerId');
-    
+
     const tr = document.createElement('tr');
 
     // 1. Customer ID Cell
@@ -641,7 +654,7 @@ function renderCustomersList() {
 
     tbody.appendChild(tr);
   });
-  
+
   if (paged.length === 0) {
     const tr = document.createElement('tr');
     const td = document.createElement('td');
@@ -653,7 +666,7 @@ function renderCustomersList() {
     tr.appendChild(td);
     tbody.appendChild(tr);
   }
-  
+
   createPaginator(custs.length, PAGE_SIZE, customersPage, p => { customersPage = p; renderCustomersList(); }, 'customersPaginator');
 }
 
@@ -716,12 +729,12 @@ function renderUsersList() {
     users = users.filter(u => String(getF(u, userSearch.field, toSnake(userSearch.field))).toLowerCase().includes(kw));
   }
   const paged = users.slice((usersPage - 1) * PAGE_SIZE, usersPage * PAGE_SIZE);
-  
+
   tbody.innerHTML = '';
   paged.forEach(u => {
     const uid = getF(u, 'employee_id', 'employeeId');
     const isSelf = uid === (currentUser.employeeId || currentUser.employee_id);
-    
+
     const tr = document.createElement('tr');
 
     // 1. Employee ID Cell
@@ -787,7 +800,7 @@ function renderUsersList() {
 
     tbody.appendChild(tr);
   });
-  
+
   if (paged.length === 0) {
     const tr = document.createElement('tr');
     const td = document.createElement('td');
@@ -799,7 +812,7 @@ function renderUsersList() {
     tr.appendChild(td);
     tbody.appendChild(tr);
   }
-  
+
   createPaginator(users.length, PAGE_SIZE, usersPage, p => { usersPage = p; renderUsersList(); }, 'usersPaginator');
 }
 
@@ -874,12 +887,12 @@ function renderProductsList() {
     prods = prods.filter(p => String(getF(p, productSearch.field, toSnake(productSearch.field))).toLowerCase().includes(kw));
   }
   const paged = prods.slice((productsPage - 1) * PAGE_SIZE, productsPage * PAGE_SIZE);
-  
+
   tbody.innerHTML = '';
   paged.forEach(p => {
     const pid = getF(p, 'product_id', 'productId');
     const bc = p.status === 'active' ? 'badge-success' : 'badge-secondary';
-    
+
     const tr = document.createElement('tr');
 
     // 1. ID Cell
@@ -930,7 +943,7 @@ function renderProductsList() {
 
     tbody.appendChild(tr);
   });
-  
+
   if (paged.length === 0) {
     const tr = document.createElement('tr');
     const td = document.createElement('td');
@@ -942,7 +955,7 @@ function renderProductsList() {
     tr.appendChild(td);
     tbody.appendChild(tr);
   }
-  
+
   createPaginator(prods.length, PAGE_SIZE, productsPage, p => { productsPage = p; renderProductsList(); }, 'productsPaginator');
 }
 
@@ -1017,12 +1030,12 @@ function renderAuditLogsList() {
     });
   }
   const paged = logs.slice((logsPage - 1) * PAGE_SIZE, logsPage * PAGE_SIZE);
-  
+
   tbody.innerHTML = '';
   paged.forEach(l => {
     const action = getF(l, 'action', 'action_type');
     const operator = getF(l, 'operator_id', 'operatorId', 'user_id', 'userId') || '-';
-    
+
     // 解析目標資訊 (處理 JSON 或純文字)
     let targetDisplay = '-';
     const rawTarget = getF(l, 'target', 'target_id', 'targetId');
@@ -1076,7 +1089,7 @@ function renderAuditLogsList() {
 
     tbody.appendChild(tr);
   });
-  
+
   if (paged.length === 0) {
     const tr = document.createElement('tr');
     const td = document.createElement('td');
@@ -1095,7 +1108,7 @@ function renderAuditLogsList() {
 function renderAccountSettings() {
   const accEmail = f('accEmail');
   const accEmailLock = f('accEmailLock');
-  
+
   f('accEmployeeId').value = currentUser.employeeId || currentUser.employee_id || '';
   f('accName').value = currentUser.name || '-';
   accEmail.value = currentUser.email || '-';
@@ -1248,7 +1261,7 @@ function bindEvents() {
   // 搜尋與下拉連動
   initDropdown('orderFieldDropdown', v => { orderSearch.field = v; renderOrdersList(); });
   f('orderSearchKeyword')?.addEventListener('input', e => { orderSearch.keyword = e.target.value; ordersPage = 1; renderOrdersList(); });
-  
+
   // 新增日期篩選事件監聽器
   initDropdown('orderDateFieldDropdown', v => { orderSearch.dateField = v; renderOrdersList(); });
   f('orderDateFrom')?.addEventListener('change', e => { orderSearch.dateFrom = e.target.value; ordersPage = 1; renderOrdersList(); });
@@ -1263,12 +1276,12 @@ function bindEvents() {
   f('auditSearchKeyword')?.addEventListener('input', e => { auditSearch.keyword = e.target.value; logsPage = 1; renderAuditLogsList(); });
 
   // 日期重設
-  f('orderDateReset')?.addEventListener('click', () => { 
-    f('orderDateFrom').value = ''; f('orderDateTo').value = ''; 
-    orderSearch.dateFrom = ''; orderSearch.dateTo = ''; 
+  f('orderDateReset')?.addEventListener('click', () => {
+    f('orderDateFrom').value = ''; f('orderDateTo').value = '';
+    orderSearch.dateFrom = ''; orderSearch.dateTo = '';
     setDropdownValue('orderDateFieldDropdown', 'created_at');
     orderSearch.dateField = 'created_at';
-    renderOrdersList(); 
+    renderOrdersList();
   });
   f('auditDateReset')?.addEventListener('click', () => { f('auditDateFrom').value = ''; f('auditDateTo').value = ''; auditSearch.dateFrom = ''; auditSearch.dateTo = ''; renderAuditLogsList(); });
 
@@ -1279,6 +1292,19 @@ function bindEvents() {
   // 模態框關閉按鈕
   document.querySelectorAll('.btn-close, .btn-secondary').forEach(b => {
     b.addEventListener('click', () => document.querySelectorAll('.modal-overlay').forEach(m => m.classList.remove('active')));
+  });
+
+  // 分析當前銷售情形按鈕 (入口 B)
+  f('analyzeOrdersBtn')?.addEventListener('click', async () => {
+    await navigateTo('analytics');
+    setTimeout(() => {
+      if (window.renderAnalyticsSection) {
+        window.renderAnalyticsSection({
+          dateFrom: orderSearch.dateFrom || (window.getDate30DaysAgo ? window.getDate30DaysAgo() : ''),
+          dateTo: orderSearch.dateTo || (window.getTodayDate ? window.getTodayDate() : '')
+        });
+      }
+    }, 100);
   });
 }
 

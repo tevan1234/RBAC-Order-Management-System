@@ -4,7 +4,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' http://localhost:8000">
+    <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; script-src 'self' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self' http://localhost:8000">
     <title>儀表板 | RBAC 訂單管理系統</title>
     <!-- Google Fonts: Inter -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -80,6 +81,7 @@
                 <section id="section-orders" class="section-content theme-order">
                     <div class="section-header">
                         <h2>訂單管理</h2>
+                        <button class="btn-add" id="analyzeOrdersBtn">分析當前銷售情形</button>
                         <button class="btn-add" id="addOrderBtn" style="display: none;">+ 新增訂單</button>
                     </div>
                     <!-- 搜尋列 -->
@@ -402,6 +404,28 @@
                             </div>
                         </form>
                     </div>
+                </section>
+
+                <!-- Sales Analytics Section -->
+                <section id="section-analytics" class="section-content theme-analytics">
+                    <div class="section-header">
+                        <h2>🤖 AI 銷售分析與報告</h2>
+                        <button class="btn-secondary" id="backToOrdersBtn">← 返回訂單管理</button>
+                    </div>
+
+                    <!-- 日期篩選器 -->
+                    <div class="analytics-filters">
+                        <input type="date" id="analyticsDateFrom">
+                        <span>～</span>
+                        <input type="date" id="analyticsDateTo">
+                        <button class="btn-primary" id="generateReportBtn">生成報告</button>
+                    </div>
+
+                    <!-- Loading & 報告顯示區 -->
+                    <div id="analyticsLoading" class="loading-spinner" style="display:none;">
+                        ⏳ AI 正在分析您的銷售數據...
+                    </div>
+                    <div id="analyticsReport" class="analytics-report-container"></div>
                 </section>
 
                 <!-- Unauthorized Message (Security Guard) -->

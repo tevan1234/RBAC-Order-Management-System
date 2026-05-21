@@ -265,8 +265,11 @@ class AnalyticsService:
                 if attempt > max_retries:
                     break
 
+        # 將詳細的例外記錄於後台 logger，但回傳乾淨、不暴露任何 Provider 資訊的友善繁體中文提示
+        logger.exception("AI Report generation completely failed after retries")
         raise HTTPException(
             status_code=502,
-            detail=f"AI 分析引擎暫時無法使用，請稍後再試。詳細原因: {str(last_error)}"
+            detail="AI 分析服務目前忙碌中，請稍後再試。"
         )
+
 

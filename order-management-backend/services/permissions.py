@@ -50,7 +50,10 @@ PERMISSIONS = {
     'USER_MANAGE_ROLE': ['admin'],
     
     # Audit Logs（僅 Admin）
-    'AUDITLOG_VIEW': ['admin']
+    'AUDITLOG_VIEW': ['admin'],
+    
+    # Analytics 銷售分析（Admin, Sales, Viewer 具備不同權限）
+    'ANALYTICS_VIEW': ['admin', 'sales', 'viewer']
 }
 
 # 資源所有權規則

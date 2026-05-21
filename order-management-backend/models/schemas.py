@@ -285,3 +285,33 @@ class OrderUpdate(BaseModel):
 class OrderStatusUpdate(BaseModel):
     """訂單狀態更新請求 Body"""
     status: str = Field(..., description="更新的訂單狀態")
+
+class AnalyticsRequest(BaseModel):
+    date_from: Optional[str] = Field(None, description="開始日期 (YYYY-MM-DD)", json_schema_extra={"example": "2026-01-01"})
+    date_to: Optional[str] = Field(None, description="結束日期 (YYYY-MM-DD)", json_schema_extra={"example": "2026-01-31"})
+    customer_id: Optional[str] = Field(None, description="客戶 ID，選填")
+    product_id: Optional[str] = Field(None, description="商品 ID，選填")
+
+    @field_validator("date_from", "date_to")
+    @classmethod
+    def validate_date_format(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        if not re.match(r"^\d{4}-\d{2}-\d{2}$", v):
+            raise ValueError("日期格式不正確，必須為 YYYY-MM-DD")
+        return v
+
+class ProductSalesStats(BaseModel):
+    product_id: str = Field(..., description="商品 ID")
+    name: Optional[str] = Field(None, description="商品名稱")
+    quantity: int = Field(..., description="銷售數量/訂購次數")
+    total_amount: float = Field(..., description="銷售總金額")
+
+class AggregatedStats(BaseModel):
+    total_orders: int = Field(..., description="總訂單數")
+    total_amount: float = Field(..., description="總金額")
+    average_amount: float = Field(..., description="平均訂單金額")
+    product_stats: List[ProductSalesStats] = Field(..., description="按產品分組統計")
+    time_series: dict = Field(..., description="按時間序列分組統計 (例如每日銷售趨勢)")
+    status_stats: dict = Field(..., description="按訂單狀態分組統計")
+

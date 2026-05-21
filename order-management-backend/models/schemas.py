@@ -315,3 +315,31 @@ class AggregatedStats(BaseModel):
     time_series: dict = Field(..., description="按時間序列分組統計 (例如每日銷售趨勢)")
     status_stats: dict = Field(..., description="按訂單狀態分組統計")
 
+
+class TrendDetail(BaseModel):
+    insights: str = Field(..., description="趨勢分析洞察")
+    trend_direction: str = Field(..., description="趨勢走向描述 (例如：上升、平穩、下降)")
+    chart_data: List[dict] = Field(..., description="圖表數據點陣列")
+
+
+class TopProductDetail(BaseModel):
+    name: str = Field(..., description="商品名稱")
+    quantity: int = Field(..., description="銷售數量")
+    revenue: float = Field(..., description="銷售總額")
+    insights: str = Field(..., description="針對該商品的銷售分析與洞察")
+
+
+class ForecastDetail(BaseModel):
+    next_30_days_revenue: float = Field(..., description="未來 30 天的預期銷售額")
+    confidence: float = Field(..., description="預測信心指數，範圍為 0.0 至 1.0")
+    recommendation: str = Field(..., description="基於預測的營運建議")
+
+
+class AIReportResponse(BaseModel):
+    summary: str = Field(..., max_length=20, description="AI 報告簡短摘要 (20字以內)")
+    trends: TrendDetail = Field(..., description="趨勢分析")
+    top_products: List[TopProductDetail] = Field(..., description="熱銷商品分析")
+    forecast: ForecastDetail = Field(..., description="未來 30 天預測")
+    recommendations: List[str] = Field(..., description="具體行動建議的陣列")
+
+

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from models.schemas import AnalyticsRequest, AggregatedStats
+from models.schemas import AnalyticsRequest, AggregatedStats, AIReportResponse
 from services.auth_service import get_current_user, require_permission
 from services.analytics_service import AnalyticsService
 
@@ -17,3 +17,18 @@ async def aggregate_analytics(
     - Sales 僅能擁有「個人檢視權限」，系統將強制進行資料隔離，僅統計該 Sales 自身負責的訂單數據。
     """
     return await AnalyticsService.aggregate_orders(req.model_dump(), user)
+
+@router.post("/generate-report", response_model=AIReportResponse)
+async def generate_ai_report(
+    req: AnalyticsRequest,
+    user: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("ANALYTICS_VIEW"))
+):
+    """
+    銷售分析 AI 報告生成。
+    - 根據請求的過濾條件，對訂單數據進行硬性角色隔離聚合。
+    - 調用 Gemini AI 分析引擎，生成包含趨勢洞察、熱銷商品分析、營收預測與具體行動建議的高階商業智慧報告。
+    - 內部實作 2 次失敗重試機制。
+    """
+    return await AnalyticsService.generate_ai_report(req.model_dump(), user)
+

@@ -275,3 +275,224 @@ async def test_analytics_invalid_date_format(ac: AsyncClient):
 
     finally:
         app.dependency_overrides.clear()
+
+
+# ==================== AI 分析報告與重試機制測試 ====================
+
+MOCK_AI_RESPONSE_JSON = """
+{
+  "summary": "業績穩健成長",
+  "trends": {
+    "insights": "本期銷售趨勢呈穩步增長狀態，主要受主力商品推動。",
+    "trend_direction": "上升",
+    "chart_data": [
+      {"name": "2026-01-05", "value": 1200.0},
+      {"name": "2026-01-06", "value": 1200.0}
+    ]
+  },
+  "top_products": [
+    {
+      "name": "極速鍵盤",
+      "quantity": 2,
+      "revenue": 2400.0,
+      "insights": "為本期最暢銷商品，客戶滿意度高。"
+    }
+  ],
+  "forecast": {
+    "next_30_days_revenue": 5000.0,
+    "confidence": 0.9,
+    "recommendation": "建議追加庫存以應對潛在需求。"
+  },
+  "recommendations": [
+    "優化極速鍵盤的供應鏈",
+    "針對老客戶進行促銷跟進"
+  ]
+}
+"""
+
+@pytest.mark.asyncio
+async def test_generate_report_admin_success(ac: AsyncClient):
+    """
+    測試 Admin 角色成功生成 AI 報告。
+    """
+    admin_user = {
+        "id": "uuid-admin",
+        "email": "admin@test.com",
+        "profile": {"id": "uuid-admin", "employee_id": "EMP_ADMIN", "role": "admin", "status": "active"}
+    }
+
+    from services.auth_service import get_current_user
+    app.dependency_overrides[get_current_user] = lambda: admin_user
+
+    try:
+        with patch("services.analytics_service.OrderRepository") as mock_order_repo_class, \
+             patch("services.analytics_service.ProductRepository") as mock_prod_repo_class, \
+             patch("google.generativeai.GenerativeModel") as mock_generative_model_class:
+
+            # Mock 銷售聚合數據獲取
+            mock_order_repo = MagicMock()
+            mock_order_repo.get_orders_for_analytics.return_value = MOCK_ORDERS
+            mock_order_repo_class.return_value = mock_order_repo
+
+            mock_prod_repo = MagicMock()
+            mock_prod_repo.get_all_products.return_value = MOCK_PRODUCTS
+            mock_prod_repo_class.return_value = mock_prod_repo
+
+            # Mock Gemini 呼叫
+            mock_model = MagicMock()
+            mock_response = MagicMock()
+            mock_response.text = MOCK_AI_RESPONSE_JSON
+            mock_model.generate_content_async = AsyncMock(return_value=mock_response)
+            mock_generative_model_class.return_value = mock_model
+
+            payload = {
+                "date_from": "2026-01-01",
+                "date_to": "2026-01-31",
+                "customer_id": None,
+                "product_id": None
+            }
+
+            headers = {"Authorization": "Bearer fake-admin-token"}
+            response = await ac.post("/api/analytics/generate-report", json=payload, headers=headers)
+
+            assert response.status_code == 200
+            data = response.json()
+
+            # 驗證回傳的結構是否符合 Pydantic 定義
+            assert data["summary"] == "業績穩健成長"
+            assert data["trends"]["insights"] == "本期銷售趨勢呈穩步增長狀態，主要受主力商品推動。"
+            assert data["trends"]["trend_direction"] == "上升"
+            assert data["trends"]["chart_data"][0]["name"] == "2026-01-05"
+            assert data["trends"]["chart_data"][0]["value"] == 1200.0
+            assert len(data["top_products"]) == 1
+            assert data["top_products"][0]["name"] == "極速鍵盤"
+            assert data["forecast"]["next_30_days_revenue"] == 5000.0
+            assert data["forecast"]["confidence"] == 0.9
+            assert len(data["recommendations"]) == 2
+
+            # 驗證是否只呼叫了一次 Gemini (無重試)
+            mock_model.generate_content_async.assert_called_once()
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_generate_report_retry_success(ac: AsyncClient):
+    """
+    測試重試機制：
+    - 第一次呼叫 Gemini：回傳非法 JSON
+    - 第二次呼叫 Gemini：回傳正常 JSON，應成功完成並返回 200 狀態碼
+    """
+    admin_user = {
+        "id": "uuid-admin",
+        "email": "admin@test.com",
+        "profile": {"id": "uuid-admin", "employee_id": "EMP_ADMIN", "role": "admin", "status": "active"}
+    }
+
+    from services.auth_service import get_current_user
+    app.dependency_overrides[get_current_user] = lambda: admin_user
+
+    try:
+        with patch("services.analytics_service.OrderRepository") as mock_order_repo_class, \
+             patch("services.analytics_service.ProductRepository") as mock_prod_repo_class, \
+             patch("google.generativeai.GenerativeModel") as mock_generative_model_class:
+
+            # Mock 銷售聚合數據
+            mock_order_repo = MagicMock()
+            mock_order_repo.get_orders_for_analytics.return_value = MOCK_ORDERS
+            mock_order_repo_class.return_value = mock_order_repo
+
+            mock_prod_repo = MagicMock()
+            mock_prod_repo.get_all_products.return_value = MOCK_PRODUCTS
+            mock_prod_repo_class.return_value = mock_prod_repo
+
+            # 設定 Mock Gemini 多次呼叫的回傳值
+            mock_model = MagicMock()
+            
+            # 第一個 Response 回傳非法的 JSON (或少欄位)，第二個正常
+            mock_response_fail = MagicMock()
+            mock_response_fail.text = "INVALID_JSON_OR_MISSING_FIELDS"
+            
+            mock_response_ok = MagicMock()
+            mock_response_ok.text = MOCK_AI_RESPONSE_JSON
+            
+            # 使用 side_effect 依序傳回失敗與成功
+            mock_model.generate_content_async = AsyncMock()
+            mock_model.generate_content_async.side_effect = [mock_response_fail, mock_response_ok]
+            mock_generative_model_class.return_value = mock_model
+
+            payload = {
+                "date_from": "2026-01-01",
+                "date_to": "2026-01-31"
+            }
+
+            headers = {"Authorization": "Bearer fake-admin-token"}
+            response = await ac.post("/api/analytics/generate-report", json=payload, headers=headers)
+
+            assert response.status_code == 200
+            data = response.json()
+            assert data["summary"] == "業績穩健成長"
+            
+            # 應呼叫過 2 次 (1 次失敗，1 次成功)
+            assert mock_model.generate_content_async.call_count == 2
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_generate_report_max_retries_fail(ac: AsyncClient):
+    """
+    測試重試上限失敗：
+    - 連續 3 次呼叫都回傳非法 JSON，應最終回傳 502 錯誤。
+    """
+    admin_user = {
+        "id": "uuid-admin",
+        "email": "admin@test.com",
+        "profile": {"id": "uuid-admin", "employee_id": "EMP_ADMIN", "role": "admin", "status": "active"}
+    }
+
+    from services.auth_service import get_current_user
+    app.dependency_overrides[get_current_user] = lambda: admin_user
+
+    try:
+        with patch("services.analytics_service.OrderRepository") as mock_order_repo_class, \
+             patch("services.analytics_service.ProductRepository") as mock_prod_repo_class, \
+             patch("google.generativeai.GenerativeModel") as mock_generative_model_class:
+
+            mock_order_repo = MagicMock()
+            mock_order_repo.get_orders_for_analytics.return_value = MOCK_ORDERS
+            mock_order_repo_class.return_value = mock_order_repo
+
+            mock_prod_repo = MagicMock()
+            mock_prod_repo.get_all_products.return_value = MOCK_PRODUCTS
+            mock_prod_repo_class.return_value = mock_prod_repo
+
+            mock_model = MagicMock()
+            mock_response_fail = MagicMock()
+            mock_response_fail.text = "{}"  # 空 JSON，缺乏必要欄位，Pydantic 驗證必會失敗
+            
+            # 連續回傳 3 次失敗
+            mock_model.generate_content_async = AsyncMock()
+            mock_model.generate_content_async.side_effect = [mock_response_fail, mock_response_fail, mock_response_fail]
+            mock_generative_model_class.return_value = mock_model
+
+            payload = {
+                "date_from": "2026-01-01",
+                "date_to": "2026-01-31"
+            }
+
+            headers = {"Authorization": "Bearer fake-admin-token"}
+            response = await ac.post("/api/analytics/generate-report", json=payload, headers=headers)
+
+            # 應回傳 502 Bad Gateway
+            assert response.status_code == 502
+            assert "AI 分析引擎暫時無法使用" in response.json()["detail"]
+            
+            # 應嘗試呼叫過 3 次 (嘗試 + 2次重試)
+            assert mock_model.generate_content_async.call_count == 3
+
+    finally:
+        app.dependency_overrides.clear()
+

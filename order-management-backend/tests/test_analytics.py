@@ -490,3 +490,110 @@ async def test_generate_report_max_retries_fail(ac: AsyncClient):
     finally:
         app.dependency_overrides.clear()
 
+
+# ==================== PDF 與 Excel 匯出與 RBAC 安全攔截測試 ====================
+
+@pytest.mark.asyncio
+async def test_export_pdf_success(ac: AsyncClient):
+    """
+    測試匯出 PDF 報告成功 (所有角色皆可下載 PDF，但資料會有隔離)
+    """
+    admin_user = {
+        "id": "uuid-admin",
+        "email": "admin@test.com",
+        "profile": {"id": "uuid-admin", "employee_id": "EMP_ADMIN", "role": "admin", "status": "active"}
+    }
+    from services.auth_service import get_current_user
+    app.dependency_overrides[get_current_user] = lambda: admin_user
+
+    try:
+        with patch("services.export_service.ExportService.generate_pdf") as mock_gen_pdf:
+            mock_gen_pdf.return_value = b"%PDF-1.4 mock pdf data"
+
+            payload = {
+                "date_from": "2026-01-01",
+                "date_to": "2026-01-31",
+                "customer_id": None,
+                "product_id": None
+            }
+
+            headers = {"Authorization": "Bearer fake-admin-token"}
+            response = await ac.post("/api/analytics/export-pdf", json=payload, headers=headers)
+
+            assert response.status_code == 200
+            assert response.headers["content-type"] == "application/pdf"
+            assert response.content == b"%PDF-1.4 mock pdf data"
+            mock_gen_pdf.assert_called_once_with(payload, admin_user)
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_export_excel_success_admin(ac: AsyncClient):
+    """
+    測試 Admin 匯出 Excel 報告成功 (Admin 有全局下載權限)
+    """
+    admin_user = {
+        "id": "uuid-admin",
+        "email": "admin@test.com",
+        "profile": {"id": "uuid-admin", "employee_id": "EMP_ADMIN", "role": "admin", "status": "active"}
+    }
+    from services.auth_service import get_current_user
+    app.dependency_overrides[get_current_user] = lambda: admin_user
+
+    try:
+        with patch("services.export_service.ExportService.generate_excel") as mock_gen_excel:
+            mock_gen_excel.return_value = b"mock excel data"
+
+            payload = {
+                "date_from": "2026-01-01",
+                "date_to": "2026-01-31",
+                "customer_id": None,
+                "product_id": None
+            }
+
+            headers = {"Authorization": "Bearer fake-admin-token"}
+            response = await ac.post("/api/analytics/export-excel", json=payload, headers=headers)
+
+            assert response.status_code == 200
+            assert "spreadsheetml.sheet" in response.headers["content-type"]
+            assert response.content == b"mock excel data"
+            mock_gen_excel.assert_called_once_with(payload, admin_user)
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_export_excel_forbidden_viewer(ac: AsyncClient):
+    """
+    測試 Viewer 匯出 Excel 報告：後端安全攔截，應回傳 403 Forbidden
+    """
+    viewer_user = {
+        "id": "uuid-viewer",
+        "email": "viewer@test.com",
+        "profile": {"id": "uuid-viewer", "employee_id": "EMP_VIEWER", "role": "viewer", "status": "active"}
+    }
+    from services.auth_service import get_current_user
+    app.dependency_overrides[get_current_user] = lambda: viewer_user
+
+    try:
+        # 在這裡，真實執行 ExportService.generate_excel，讓它觸發 403 異常，以驗證真實的 RBAC 攔截邏輯
+        payload = {
+            "date_from": "2026-01-01",
+            "date_to": "2026-01-31",
+            "customer_id": None,
+            "product_id": None
+        }
+
+        headers = {"Authorization": "Bearer fake-viewer-token"}
+        response = await ac.post("/api/analytics/export-excel", json=payload, headers=headers)
+
+        assert response.status_code == 403
+        assert "Viewer" in response.json()["detail"] or "檢視者" in response.json()["detail"]
+
+    finally:
+        app.dependency_overrides.clear()
+
+

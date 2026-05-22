@@ -1,6 +1,6 @@
 // analytics-module.js - 獨立模組避免 dashboard.js 過大
-import { apiRequest, escapeHtml } from './utils.js';
-import { getCurrentUser } from './auth.js';
+import { apiRequest, escapeHtml, showNotification } from './utils.js';
+import { getCurrentUser, getToken } from './auth.js';
 
 let isEventsBound = false;
 
@@ -17,6 +17,18 @@ export function getTodayDate() {
 export async function renderAnalyticsSection(filters = {}) {
   // 綁定事件監聽器 (僅在首次載入時綁定)
   bindAnalyticsEvents();
+  
+  // 角色防禦：若是檢視者 (Viewer)，隱藏 Excel 下載按鈕
+  const currentUser = getCurrentUser();
+  const userRole = currentUser?.role || 'viewer';
+  const downloadExcelBtn = document.getElementById('downloadExcelBtn');
+  if (downloadExcelBtn) {
+    if (userRole === 'viewer') {
+      downloadExcelBtn.style.display = 'none';
+    } else {
+      downloadExcelBtn.style.display = 'inline-block';
+    }
+  }
   
   // 預設 30 天
   const dateFrom = filters.dateFrom || getDate30DaysAgo();
@@ -163,6 +175,76 @@ function renderBackupHtml(container, report) {
   `;
 }
 
+async function handleDownload(endpoint, defaultFilename) {
+  const dateFrom = document.getElementById('analyticsDateFrom').value;
+  const dateTo = document.getElementById('analyticsDateTo').value;
+  if (!dateFrom || !dateTo) {
+    showNotification('請選擇日期範圍', 'warning');
+    return;
+  }
+  const container = document.getElementById('analyticsReport');
+  const customerId = container?.dataset.customerId || null;
+  const productId = container?.dataset.productId || null;
+
+  showNotification('正在準備下載檔案，請稍候...', 'info');
+
+  try {
+    const token = getToken();
+    const headers = {
+      'Content-Type': 'application/json'
+    };
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    const response = await fetch(`http://localhost:8000/api${endpoint}`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        date_from: dateFrom,
+        date_to: dateTo,
+        customer_id: customerId || null,
+        product_id: productId || null
+      })
+    });
+
+    if (!response.ok) {
+      const errText = await response.text();
+      let errMsg = '下載報告失敗';
+      try {
+        const errJson = JSON.parse(errText);
+        errMsg = errJson.detail || errMsg;
+      } catch (e) {}
+      throw new Error(errMsg);
+    }
+
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+
+    const disposition = response.headers.get('content-disposition');
+    let filename = defaultFilename;
+    if (disposition && disposition.indexOf('attachment') !== -1) {
+      const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+      const matches = filenameRegex.exec(disposition);
+      if (matches != null && matches[1]) {
+        filename = matches[1].replace(/['"]/g, '');
+      }
+    }
+
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+    showNotification('檔案下載成功！', 'success');
+  } catch (error) {
+    console.error('Download error:', error);
+    showNotification(`下載失敗: ${error.message}`, 'error');
+  }
+}
+
 function bindAnalyticsEvents() {
   if (isEventsBound) return;
   
@@ -185,6 +267,16 @@ function bindAnalyticsEvents() {
     const customerId = container?.dataset.customerId || null;
     const productId = container?.dataset.productId || null;
     await generateReport(dateFrom, dateTo, customerId || null, productId || null);
+  });
+
+  // 下載 PDF 按鈕
+  document.getElementById('downloadPdfBtn')?.addEventListener('click', async () => {
+    await handleDownload('/analytics/export-pdf', 'sales_report.pdf');
+  });
+
+  // 下載 Excel 按鈕
+  document.getElementById('downloadExcelBtn')?.addEventListener('click', async () => {
+    await handleDownload('/analytics/export-excel', 'sales_report.xlsx');
   });
   
   isEventsBound = true;

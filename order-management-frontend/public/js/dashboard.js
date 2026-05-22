@@ -130,7 +130,7 @@ async function loadDashboardData() {
 }
 
 // ── 導覽 ──
-async function navigateTo(section) {
+async function navigateTo(section, filters = null) {
   document.querySelectorAll('.section-content').forEach(s => s.classList.remove('active'));
   document.getElementById('section-' + section)?.classList.add('active');
   document.querySelectorAll('.menu-item').forEach(el => el.classList.toggle('active', el.dataset.section === section));
@@ -186,7 +186,7 @@ async function navigateTo(section) {
         await import('./analytics-module.js');
         window.analyticsModuleLoaded = true;
       }
-      window.renderAnalyticsSection();
+      window.renderAnalyticsSection(filters || {});
     }
   };
   if (map[section]) {
@@ -1296,15 +1296,38 @@ function bindEvents() {
 
   // 分析當前銷售情形按鈕 (入口 B)
   f('analyzeOrdersBtn')?.addEventListener('click', async () => {
-    await navigateTo('analytics');
-    setTimeout(() => {
-      if (window.renderAnalyticsSection) {
-        window.renderAnalyticsSection({
-          dateFrom: orderSearch.dateFrom || (window.getDate30DaysAgo ? window.getDate30DaysAgo() : ''),
-          dateTo: orderSearch.dateTo || (window.getTodayDate ? window.getTodayDate() : '')
-        });
+    const dateFrom = orderSearch.dateFrom || (window.getDate30DaysAgo ? window.getDate30DaysAgo() : '');
+    const dateTo = orderSearch.dateTo || (window.getTodayDate ? window.getTodayDate() : '');
+    
+    let customerId = null;
+    let productId = null;
+    
+    if (orderSearch.keyword) {
+      const kw = orderSearch.keyword.toLowerCase().trim();
+      if (orderSearch.field === 'customer') {
+        const matchedCust = cachedCustomers.find(c => 
+          String(getF(c, 'customer_id', 'customerId')).toLowerCase() === kw ||
+          String(c.name || c.customer_name || '').toLowerCase().includes(kw)
+        );
+        if (matchedCust) {
+          customerId = getF(matchedCust, 'customer_id', 'customerId');
+        } else {
+          customerId = orderSearch.keyword.trim();
+        }
+      } else if (orderSearch.field === 'product') {
+        const matchedProd = cachedProducts.find(p => 
+          String(getF(p, 'product_id', 'productId')).toLowerCase() === kw ||
+          String(p.name || '').toLowerCase().includes(kw)
+        );
+        if (matchedProd) {
+          productId = getF(matchedProd, 'product_id', 'productId');
+        } else {
+          productId = orderSearch.keyword.trim();
+        }
       }
-    }, 100);
+    }
+    
+    await navigateTo('analytics', { dateFrom, dateTo, customerId, productId });
   });
 }
 

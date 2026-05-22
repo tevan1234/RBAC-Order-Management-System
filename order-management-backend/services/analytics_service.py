@@ -6,7 +6,7 @@ from fastapi import HTTPException
 from services.supabase_client import get_supabase_admin
 from repositories import OrderRepository, ProductRepository
 from typing import List, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 from models.schemas import AIReportResponse
 
 logger = logging.getLogger(__name__)
@@ -68,6 +68,7 @@ class AnalyticsService:
 
         # 3. 聚合運算
         total_orders = len(orders)
+        completed_orders = 0
         total_amount = 0.0
         
         product_agg = {}   # {product_id: {"quantity": int, "total_amount": float}}
@@ -80,28 +81,44 @@ class AnalyticsService:
             p_id = order.get("product_id") or "未知商品ID"
             created_at_str = order.get("created_at")
 
-            # 總金額
-            total_amount += amount
-
             # 按狀態分組
             status_stats[status] = status_stats.get(status, 0) + 1
 
-            # 按產品分組
-            if p_id not in product_agg:
-                product_agg[p_id] = {"quantity": 0, "total_amount": 0.0}
-            product_agg[p_id]["quantity"] += 1
-            product_agg[p_id]["total_amount"] += amount
+            # 銷售額/銷售量計算：排除已作廢及處理中的訂單，僅統計「已完成」訂單
+            if status == "已完成":
+                completed_orders += 1
+                total_amount += amount
 
-            # 按時間序列分組 (YYYY-MM-DD)
-            if created_at_str:
-                try:
-                    date_key = created_at_str.split("T")[0]
-                    time_series[date_key] = time_series.get(date_key, 0.0) + amount
-                except Exception:
-                    pass
+                # 按產品分組
+                if p_id not in product_agg:
+                    product_agg[p_id] = {"quantity": 0, "total_amount": 0.0}
+                product_agg[p_id]["quantity"] += 1
+                product_agg[p_id]["total_amount"] += amount
 
-        # 計算平均金額
-        average_amount = total_amount / total_orders if total_orders > 0 else 0.0
+                # 按時間序列分組 (YYYY-MM-DD)
+                if created_at_str:
+                    try:
+                        # 統一將 Z 字尾或空格格式化為標準 ISO 格式以利 fromisoformat 解析
+                        clean_str = created_at_str.replace("Z", "+00:00")
+                        if " " in clean_str:
+                            clean_str = clean_str.replace(" ", "T")
+                        
+                        dt = datetime.fromisoformat(clean_str)
+                        
+                        # 轉換為台灣時區 (UTC+8)
+                        tz_taipei = timezone(timedelta(hours=8))
+                        if dt.tzinfo:
+                            dt_taipei = dt.astimezone(tz_taipei)
+                        else:
+                            dt_taipei = dt.replace(tzinfo=timezone.utc).astimezone(tz_taipei)
+                            
+                        date_key = dt_taipei.strftime("%Y-%m-%d")
+                        time_series[date_key] = time_series.get(date_key, 0.0) + amount
+                    except Exception:
+                        pass
+
+        # 計算平均金額 (以已完成之有效訂單計算平均)
+        average_amount = total_amount / completed_orders if completed_orders > 0 else 0.0
 
         # 將產品分組轉換成 ProductSalesStats 結構
         product_stats_list = []

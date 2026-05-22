@@ -162,20 +162,14 @@ async def test_analytics_admin_global_view(ac: AsyncClient):
 
             # 驗證全局聚合計算結果
             assert data["total_orders"] == 3
-            assert data["total_amount"] == 10900.0  # 1200 + 8500 + 1200
-            assert round(data["average_amount"], 2) == round(10900.0 / 3, 2)
-            assert len(data["product_stats"]) == 2  # P1, P2
+            assert data["total_amount"] == 2400.0  # 僅計算「已完成」：1200 + 1200
+            assert data["average_amount"] == 1200.0
+            assert len(data["product_stats"]) == 1  # 僅 P1 有「已完成」訂單
             
-            # P2 金額最大，應該排在第一個
-            assert data["product_stats"][0]["product_id"] == "P2"
-            assert data["product_stats"][0]["name"] == "高畫質螢幕"
-            assert data["product_stats"][0]["quantity"] == 1
-            assert data["product_stats"][0]["total_amount"] == 8500.0
-
-            assert data["product_stats"][1]["product_id"] == "P1"
-            assert data["product_stats"][1]["name"] == "極速鍵盤"
-            assert data["product_stats"][1]["quantity"] == 2
-            assert data["product_stats"][1]["total_amount"] == 2400.0
+            assert data["product_stats"][0]["product_id"] == "P1"
+            assert data["product_stats"][0]["name"] == "極速鍵盤"
+            assert data["product_stats"][0]["quantity"] == 2
+            assert data["product_stats"][0]["total_amount"] == 2400.0
 
             # 驗證訂單狀態分組
             assert data["status_stats"] == {"已完成": 2, "處理中": 1}

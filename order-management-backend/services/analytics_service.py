@@ -157,19 +157,26 @@ class AnalyticsService:
         profile = user.get("profile", user)
         user_id = user.get("id") or profile.get("id")
 
-        # 0. 每日快取檢查 (Daily Cache Check)：24 小時內且相同 filter 參數直接回傳
+        # 1. 先行獲取聚合數據，以便計算最新的「動態數據指紋 (Data Fingerprint)」
+        #    此步驟僅查詢本地 PostgreSQL，速度極快且不消耗 Gemini API 額度
+        aggregated_data = await AnalyticsService.aggregate_orders(filters, user)
+
+        # 2. 計算動態數據指紋以做為快取金鑰的一部分。若訂單狀態、金額或筆數有任何改變，指紋將不同
+        import hashlib
+        fingerprint_source = f"{aggregated_data.get('total_orders')}_{aggregated_data.get('total_amount')}_{json.dumps(aggregated_data.get('status_stats'), sort_keys=True)}"
+        fingerprint = hashlib.md5(fingerprint_source.encode('utf-8')).hexdigest()
+        cache_filters = {**filters, "_fingerprint": fingerprint}
+
+        # 3. 每日快取檢查 (Daily Cache Check)：24 小時內且指紋/篩選條件完全相同才命中快取
         if user_id:
             try:
                 history_repo = AnalyticsService._get_report_history_repo()
-                cached_record = history_repo.get_recent_cache(str(user_id), filters, hours=24)
+                cached_record = history_repo.get_recent_cache(str(user_id), cache_filters, hours=24)
                 if cached_record:
-                    logger.info(f"AI 銷售分析快取命中 (Cache HIT)! 使用者 ID: {user_id}, 篩選條件: {filters}")
+                    logger.info(f"AI 銷售分析快取命中 (Cache HIT)! 使用者 ID: {user_id}, 快取條件: {cache_filters}")
                     return cached_record.get("report_content") or {}
             except Exception as ce:
                 logger.error(f"快取檢查過程發生錯誤，將直接呼叫 API 生成: {str(ce)}")
-
-        # 1. 數據獲取 (包含角色隔離防禦)
-        aggregated_data = await AnalyticsService.aggregate_orders(filters, user)
 
         # 2. 獲取使用者角色並調整分析視角
         role = profile.get("role")
@@ -287,14 +294,14 @@ class AnalyticsService:
                 validated_report = AIReportResponse.model_validate(report_json)
                 report_dict = validated_report.model_dump()
 
-                # 5. 生成成功後，非同步寫入歷史紀錄表 (JSONB 快取機制)
+                # 5. 生成成功後，非同步寫入歷史紀錄表 (JSONB 快取機制，包含指紋)
                 if user_id:
                     try:
                         history_repo = AnalyticsService._get_report_history_repo()
                         history_repo.save_report(
                             user_id=str(user_id),
                             report_type="sales_analytics",
-                            filter_parameters=filters,
+                            filter_parameters=cache_filters,
                             report_content=report_dict
                         )
                         logger.info(f"AI 銷售分析已存入歷史紀錄與快取。使用者 ID: {user_id}")

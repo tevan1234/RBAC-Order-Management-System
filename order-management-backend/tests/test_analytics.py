@@ -21,6 +21,38 @@ MOCK_ORDERS = [
     {"id": "ORD3", "customer": "C3", "product_id": "P1", "amount": 1200.0, "status": "已完成", "owner_id": "EMP_SALES_1", "created_at": "2026-01-06T09:00:00Z"},
 ]
 
+class MockReportHistoryRepo:
+    store = {}
+    def __init__(self, *args, **kwargs):
+        pass
+
+    def save_report(self, user_id, report_type, filter_parameters, report_content, record_id=None):
+        rec_id = record_id or "some-uuid"
+        record = {
+            "id": rec_id,
+            "user_id": user_id,
+            "report_type": report_type,
+            "filter_parameters": filter_parameters,
+            "report_content": report_content
+        }
+        MockReportHistoryRepo.store[rec_id] = record
+        return record
+
+    def find_one(self, query):
+        rec_id = query.get("id")
+        return MockReportHistoryRepo.store.get(rec_id)
+
+    def update(self, data, query):
+        rec_id = query.get("id")
+        if rec_id in MockReportHistoryRepo.store:
+            MockReportHistoryRepo.store[rec_id].update(data)
+            return MockReportHistoryRepo.store[rec_id]
+        return None
+
+    def get_recent_cache(self, user_id, filters, hours=24):
+        return None
+
+
 @pytest.mark.asyncio
 async def test_analytics_sales_isolation(ac: AsyncClient):
     """
@@ -318,9 +350,11 @@ async def test_generate_report_admin_success(ac: AsyncClient):
     from services.auth_service import get_current_user
     app.dependency_overrides[get_current_user] = lambda: admin_user
 
+    MockReportHistoryRepo.store.clear()
     try:
         with patch("services.analytics_service.OrderRepository") as mock_order_repo_class, \
              patch("services.analytics_service.ProductRepository") as mock_prod_repo_class, \
+             patch("services.analytics_service.ReportHistoryRepository", MockReportHistoryRepo), \
              patch("google.generativeai.GenerativeModel") as mock_generative_model_class:
 
             # Mock 銷售聚合數據獲取
@@ -350,9 +384,18 @@ async def test_generate_report_admin_success(ac: AsyncClient):
             response = await ac.post("/api/analytics/generate-report", json=payload, headers=headers)
 
             assert response.status_code == 200
-            data = response.json()
+            init_data = response.json()
+            assert "task_id" in init_data
+            assert init_data["status"] == "processing"
+
+            task_id = init_data["task_id"]
+
+            status_response = await ac.get(f"/api/analytics/task-status/{task_id}", headers=headers)
+            assert status_response.status_code == 200
+            data = status_response.json()
 
             # 驗證回傳的結構是否符合 Pydantic 定義
+            assert data["status"] == "success"
             assert data["summary"] == "業績穩健成長"
             assert data["trends"]["insights"] == "本期銷售趨勢呈穩步增長狀態，主要受主力商品推動。"
             assert data["trends"]["trend_direction"] == "上升"
@@ -387,9 +430,11 @@ async def test_generate_report_retry_success(ac: AsyncClient):
     from services.auth_service import get_current_user
     app.dependency_overrides[get_current_user] = lambda: admin_user
 
+    MockReportHistoryRepo.store.clear()
     try:
         with patch("services.analytics_service.OrderRepository") as mock_order_repo_class, \
              patch("services.analytics_service.ProductRepository") as mock_prod_repo_class, \
+             patch("services.analytics_service.ReportHistoryRepository", MockReportHistoryRepo), \
              patch("google.generativeai.GenerativeModel") as mock_generative_model_class:
 
             # Mock 銷售聚合數據
@@ -425,7 +470,16 @@ async def test_generate_report_retry_success(ac: AsyncClient):
             response = await ac.post("/api/analytics/generate-report", json=payload, headers=headers)
 
             assert response.status_code == 200
-            data = response.json()
+            init_data = response.json()
+            assert "task_id" in init_data
+            assert init_data["status"] == "processing"
+
+            task_id = init_data["task_id"]
+
+            status_response = await ac.get(f"/api/analytics/task-status/{task_id}", headers=headers)
+            assert status_response.status_code == 200
+            data = status_response.json()
+            assert data["status"] == "success"
             assert data["summary"] == "業績穩健成長"
             
             # 應呼叫過 2 次 (1 次失敗，1 次成功)
@@ -439,7 +493,7 @@ async def test_generate_report_retry_success(ac: AsyncClient):
 async def test_generate_report_max_retries_fail(ac: AsyncClient):
     """
     測試重試上限失敗：
-    - 連續 3 次呼叫都回傳非法 JSON，應最終回傳 502 錯誤。
+    - 連續 3 次呼叫都回傳非法 JSON，應最終回傳 failed 狀態任務。
     """
     admin_user = {
         "id": "uuid-admin",
@@ -450,9 +504,11 @@ async def test_generate_report_max_retries_fail(ac: AsyncClient):
     from services.auth_service import get_current_user
     app.dependency_overrides[get_current_user] = lambda: admin_user
 
+    MockReportHistoryRepo.store.clear()
     try:
         with patch("services.analytics_service.OrderRepository") as mock_order_repo_class, \
              patch("services.analytics_service.ProductRepository") as mock_prod_repo_class, \
+             patch("services.analytics_service.ReportHistoryRepository", MockReportHistoryRepo), \
              patch("google.generativeai.GenerativeModel") as mock_generative_model_class:
 
             mock_order_repo = MagicMock()
@@ -480,9 +536,19 @@ async def test_generate_report_max_retries_fail(ac: AsyncClient):
             headers = {"Authorization": "Bearer fake-admin-token"}
             response = await ac.post("/api/analytics/generate-report", json=payload, headers=headers)
 
-            # 應回傳 502 Bad Gateway
-            assert response.status_code == 502
-            assert "AI 分析服務目前忙碌中，請稍後再試。" in response.json()["detail"]
+            assert response.status_code == 200
+            init_data = response.json()
+            assert "task_id" in init_data
+            assert init_data["status"] == "processing"
+
+            task_id = init_data["task_id"]
+
+            status_response = await ac.get(f"/api/analytics/task-status/{task_id}", headers=headers)
+            assert status_response.status_code == 200
+            data = status_response.json()
+
+            assert data["status"] == "failed"
+            assert "AI 分析服務目前忙碌中，請稍後再試。" in data["error"]
             
             # 應嘗試呼叫過 3 次 (嘗試 + 2次重試)
             assert mock_model.generate_content_async.call_count == 3

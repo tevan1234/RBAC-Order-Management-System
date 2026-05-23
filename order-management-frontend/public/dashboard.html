@@ -45,7 +45,7 @@
         }
     </script>
     <!-- 預載我們的 React 視覺化報告組件 -->
-    <script type="text/babel" src="js/AISalesReport.jsx"></script>
+    <script type="text/babel" src="js/AISalesReport.jsx?v=1.0.1"></script>
 </head>
 
 <body>
@@ -102,6 +102,23 @@
                         <div class="stat-card">
                             <div class="stat-label">處理中訂單數</div>
                             <div class="stat-value" id="dbPendingOrders">0</div>
+                        </div>
+                    </div>
+
+                    <!-- 🤖 AI 即時銷售速報 Widget -->
+                    <div class="dashboard-ai-widget glass" id="dashboardAiWidget" style="margin-top: 24px; display: none;">
+                        <div class="widget-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255, 255, 255, 0.1); padding-bottom: 12px; margin-bottom: 12px;">
+                            <h3 class="widget-title" id="dashboardAiWidgetTitle" style="margin: 0; font-size: 16px; font-weight: 700; color: var(--text-main);">
+                                📊 過去 7 日銷售速報 (載入中...)
+                            </h3>
+                            <button id="refreshAiWidgetBtn" class="btn-widget-refresh" title="重新整理" style="background: none; border: none; cursor: pointer; font-size: 16px; transition: transform 0.2s ease;">🔄</button>
+                        </div>
+                        <div class="widget-body" id="dashboardAiWidgetContent">
+                            <div class="widget-skeleton">
+                                <div class="skeleton-line" style="height: 14px; background: rgba(255,255,255,0.05); margin-bottom: 8px; border-radius: 4px; width: 100%;"></div>
+                                <div class="skeleton-line" style="height: 14px; background: rgba(255,255,255,0.05); margin-bottom: 8px; border-radius: 4px; width: 90%;"></div>
+                                <div class="skeleton-line" style="height: 14px; background: rgba(255,255,255,0.05); border-radius: 4px; width: 75%;"></div>
+                            </div>
                         </div>
                     </div>
 
@@ -700,7 +717,7 @@
     <!-- GSAP -->
     <div class="sidebar-overlay" id="sidebarOverlay"></div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
-    <script type="module" src="js/dashboard.js"></script>
+    <script type="module" src="js/dashboard.js?v=1.0.1"></script>
 
     <!-- 歷史報告 Drawer -->
     <div class="history-drawer-overlay" id="historyDrawerOverlay"></div>

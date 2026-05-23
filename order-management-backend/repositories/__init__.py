@@ -6,4 +6,6 @@ from .product_repository import ProductRepository
 from .user_repository import UserRepository
 from .audit_repository import AuditRepository
 from .report_history_repository import ReportHistoryRepository
+from .subscription_repository import SubscriptionRepository
+
 

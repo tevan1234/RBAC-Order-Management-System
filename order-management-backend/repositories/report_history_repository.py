@@ -61,7 +61,7 @@ class ReportHistoryRepository(BaseRepository):
             logger.error(f"查詢銷售報告快取失敗 (user_id: {user_id}): {str(e)}")
             return None
 
-    def save_report(self, user_id: str, report_type: str, filter_parameters: dict, report_content: dict) -> Dict[str, Any]:
+    def save_report(self, user_id: str, report_type: str, filter_parameters: dict, report_content: dict, record_id: Optional[str] = None) -> Dict[str, Any]:
         """
         將生成成功的報告內容及過濾器參數，寫入歷史紀錄資料表中。
         """
@@ -72,6 +72,8 @@ class ReportHistoryRepository(BaseRepository):
                 "filter_parameters": filter_parameters,
                 "report_content": report_content
             }
+            if record_id:
+                data["id"] = record_id
             res = self.insert(data)
             return res.data[0] if res.data else {}
         except Exception as e:

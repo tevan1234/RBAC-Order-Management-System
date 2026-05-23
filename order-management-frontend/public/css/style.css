@@ -1,4 +1,4 @@
-﻿:root {
+:root {
     --primary-color: #4F46E5;
     --primary-hover: #4338CA;
     --accent-color: #6366F1;
@@ -2308,4 +2308,63 @@ body {
 .btn-reapply:active {
   transform: translateY(0);
   box-shadow: 0 2px 8px rgba(124, 58, 237, 0.25);
+}
+
+/* ==========================================
+   🤖 AI 銷售速報 Widget & Premium Styling
+   ========================================== */
+
+.dashboard-ai-widget {
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(20px) saturate(1.8);
+  -webkit-backdrop-filter: blur(20px) saturate(1.8);
+  border: 1px solid rgba(124, 58, 237, 0.15);
+  border-radius: 20px;
+  padding: 24px;
+  box-shadow: 0 10px 30px rgba(124, 58, 237, 0.05), 0 1px 3px rgba(0, 0, 0, 0.02);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  margin-bottom: 32px;
+  box-sizing: border-box;
+}
+
+.dashboard-ai-widget:hover {
+  transform: translateY(-2px);
+  border-color: rgba(124, 58, 237, 0.3);
+  box-shadow: 0 16px 36px rgba(124, 58, 237, 0.1), 0 2px 8px rgba(0, 0, 0, 0.04);
+}
+
+.btn-widget-refresh {
+  transition: transform 0.3s ease, color 0.2s ease;
+}
+
+.btn-widget-refresh:hover {
+  transform: rotate(180deg);
+  color: #7c3aed;
+}
+
+/* Skeleton Loading Animation */
+@keyframes skeletonPulse {
+  0% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+    background: rgba(124, 58, 237, 0.08);
+  }
+  100% {
+    opacity: 0.6;
+  }
+}
+
+.widget-skeleton .skeleton-line {
+  animation: skeletonPulse 1.5s infinite ease-in-out;
+}
+
+.widget-insight-text {
+  font-size: 15px;
+  line-height: 1.8;
+  color: #4b5563;
+  margin: 0;
+  font-weight: 500;
+  letter-spacing: 0.2px;
 }

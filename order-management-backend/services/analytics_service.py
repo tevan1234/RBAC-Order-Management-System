@@ -1,10 +1,12 @@
 import os
 import json
 import logging
+import time
+from functools import lru_cache
 import google.generativeai as genai
 from fastapi import HTTPException
 from services.supabase_client import get_supabase_admin
-from repositories import OrderRepository, ProductRepository, ReportHistoryRepository
+from repositories import OrderRepository, ProductRepository, ReportHistoryRepository, SubscriptionRepository
 from typing import List, Dict, Any
 from datetime import datetime, timezone, timedelta
 from models.schemas import AIReportResponse
@@ -29,6 +31,11 @@ class AnalyticsService:
     @staticmethod
     def _get_report_history_repo() -> ReportHistoryRepository:
         return ReportHistoryRepository(get_supabase_admin())
+
+    @staticmethod
+    def _get_subscription_repo() -> SubscriptionRepository:
+        return SubscriptionRepository(get_supabase_admin())
+
 
     @staticmethod
     async def aggregate_orders(filters: dict, user: dict) -> dict:
@@ -353,3 +360,304 @@ class AnalyticsService:
         except Exception as e:
             logger.error(f"獲取銷售報告歷史清單失敗 (user_id: {user_id}): {str(e)}")
             return []
+
+    @staticmethod
+    async def get_realtime_insights(user: dict) -> dict:
+        """
+        獲取首頁 AI 銷售速報。
+        撈取包含昨天在內的最近 7 天數據，計算 date_from 與 date_to，並呼叫 Gemini 同步生成極簡銷售速報。
+        使用 1 小時快取以防止重覆呼叫。
+        """
+        # 1. 計算日期區間 (完整 7 日，排除當日)
+        tz_taipei = timezone(timedelta(hours=8))
+        now_taipei = datetime.now(tz_taipei)
+        today_taipei = now_taipei.date()
+        yesterday = today_taipei - timedelta(days=1)
+        
+        date_to = yesterday.strftime("%Y-%m-%d")
+        date_from = (yesterday - timedelta(days=6)).strftime("%Y-%m-%d")
+        
+        filters = {
+            "date_from": date_from,
+            "date_to": date_to
+        }
+        
+        # 2. 獲取角色與聚合數據
+        profile = user.get("profile", user)
+        role = profile.get("role")
+        
+        aggregated_data = await AnalyticsService.aggregate_orders(filters, user)
+        
+        # 3. 取得 1 小時快取窗口與雜湊鍵
+        time_window = int(time.time() // 3600)
+        aggregated_data_str = json.dumps(aggregated_data, sort_keys=True, ensure_ascii=False)
+        
+        # 4. 呼叫 cached helper (lru_cache)
+        insights = AnalyticsService._get_cached_realtime_insights(time_window, role, aggregated_data_str)
+        
+        return {
+            "insights": insights,
+            "date_from": date_from,
+            "date_to": date_to
+        }
+
+    @staticmethod
+    @lru_cache(maxsize=128)
+    def _get_cached_realtime_insights(time_window: int, role: str, aggregated_data_str: str) -> str:
+        """
+        使用 lru_cache 快取極簡銷售速報生成結果。
+        """
+        # 準備 Prompts
+        system_prompt = (
+            "您是一位頂尖的「AI 銷售分析專家」。\n"
+            "請根據提供的前 7 天銷售聚合數據，撰寫一份極簡、精煉且具穿透力的「過去 7 日銷售速報心得」。\n"
+            "請直接輸出分析結論，不要帶有任何 JSON 格式、Markdown 標記或解釋性廢話，字數嚴格控制在 150 字以內，並全部使用繁體中文(zh-TW)撰寫。"
+        )
+        
+        user_prompt = (
+            f"【使用者角色】: {role}\n"
+            f"【過往 7 天銷售聚合數據】: {aggregated_data_str}\n"
+            "請提供精煉的 7 日銷售速報心得（150字以內，繁體中文）。"
+        )
+        
+        model_name = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
+        model = genai.GenerativeModel(
+            model_name=model_name,
+            system_instruction=system_prompt
+        )
+        
+        # 同步生成
+        response = model.generate_content(user_prompt)
+        return response.text.strip() if response.text else "無法取得銷售速報。"
+
+    @staticmethod
+    async def background_generate_ai_report(task_id: str, cache_filters: dict, user: dict) -> None:
+        """
+        非同步背景生成 AI 銷售報告，並在成功或失敗後更新 report_history 資料表。
+        """
+        profile = user.get("profile", user)
+        user_id = user.get("id") or profile.get("id")
+        
+        try:
+            logger.info(f"開始非同步背景生成 AI 報告，任務 ID: {task_id}")
+            
+            # 獲取聚合數據
+            aggregated_data = await AnalyticsService.aggregate_orders(cache_filters, user)
+            
+            role = profile.get("role")
+            if role in ["admin", "viewer"]:
+                perspective = (
+                    "您當前扮演『高階商業智慧分析師』，正為系統的管理員(Admin)與檢視者(Viewer)提供『宏觀銷售決策報告』。\n"
+                    "分析重點：請提供『宏觀營運策略、跨部門/跨產品走勢、大方向調整建議』。"
+                )
+            elif role == "sales":
+                perspective = (
+                    "您當前扮演『高階商業智慧分析師』，正為負責個人銷售業務的銷售專員(Sales)提供『微觀執行與跟進建議報告』。\n"
+                    "分析重點：請提供『微觀執行建議、個人客戶跟進提醒、個人暢銷商品組合』。"
+                )
+            else:
+                raise ValueError("未授權的角色權限")
+
+            system_prompt = (
+                "您是一位頂尖且經驗豐富的「高階商業智慧分析師」。\n"
+                "您的任務是根據系統提供的結構化銷售統計聚合數據，結合使用者的角色視角，撰寫一份具備深度洞察力、精準預測力與高實操性的商業分析報告。\n\n"
+                "您必須嚴格回傳一個符合以下 JSON 格式的數據結構，不可包含任何非 JSON 的字串、解釋或 Markdown 區塊包裝：\n\n"
+                "{\n"
+                '  "summary": "【少於 20 字的簡短報告摘要，必須精煉且具衝擊力】",\n'
+                '  "trends": {\n'
+                '    "insights": "【詳細的趨勢分析與洞察，解釋銷售的走向與原因】",\n'
+                '    "trend_direction": "【趨勢走向描述，如：持續上升、平穩震盪、面臨下滑】",\n'
+                '    "chart_data": [\n'
+                '      {\n'
+                '        "name": "【圖表數值標籤或日期，例如：2026-05-01】",\n'
+                '        "value": 12345.6\n'
+                "      }\n"
+                "    ]\n"
+                "  },\n"
+                '  "top_products": [\n'
+                "    {\n"
+                '      "name": "【商品名稱】",\n'
+                '      "quantity": 10,\n'
+                '      "revenue": 120000.0,\n'
+                '      "insights": "【該商品之銷售原因分析及未來推廣洞察】"\n'
+                "    }\n"
+                "  ],\n"
+                '  "forecast": {\n'
+                '    "next_30_days_revenue": 150000.0,\n'
+                '    "confidence": 0.85,\n'
+                '    "recommendation": "【針對未來 30 天營收預測所提出的具體預防性或擴張性運營策略建議】"\n'
+                "  },\n"
+                '  "recommendations": [\n'
+                '    "【具體行動建議 1】",\n'
+                '    "【具體行動建議 2】",\n'
+                '    "【具體行動建議 3，至少提供兩到三條高度可執行的建議】"\n'
+                "  ]\n"
+                "}\n\n"
+                "請確保：\n"
+                "1. `summary` 必須在 20 個字元以內（含標點符號）。\n"
+                "2. `forecast.confidence` 必須是 0.0 到 1.0 之間的浮點數，代表您對預測的信心指數。\n"
+                "3. `trends.chart_data` 必須是一個包含 `name` (字串) 與 `value` (數字) 鍵值對的物件陣列，可用於繪製銷售趨勢圖。\n"
+                "4. 針對不同使用者角色的分析焦點需動態調整（詳細說明將於 User Prompt 中提供）。\n"
+                "5. 回傳的 JSON 格式必須 100% 合法，且欄位名稱完全一致。\n"
+                "6. 內容必須全部使用繁體中文(zh-TW)撰寫。"
+            )
+
+            user_prompt = (
+                f"【當前使用者角色與視角】\n"
+                f"{perspective}\n\n"
+                f"【銷售統計聚合數據】\n"
+                f"- 總訂單數: {aggregated_data.get('total_orders')} 筆\n"
+                f"- 總銷售金額: {aggregated_data.get('total_amount')} 元\n"
+                f"- 平均單筆訂單金額: {aggregated_data.get('average_amount')} 元\n"
+                f"- 熱銷商品統計: {json.dumps(aggregated_data.get('product_stats'), ensure_ascii=False)}\n"
+                f"- 時間序列銷售趨勢 (每日銷售額): {json.dumps(aggregated_data.get('time_series'), ensure_ascii=False)}\n"
+                f"- 訂單狀態統計: {json.dumps(aggregated_data.get('status_stats'), ensure_ascii=False)}\n\n"
+                f"請依照 System Prompt 規定的角色視角，深度解讀上述銷售數據。\n"
+                f"- 若您為 Admin/Viewer 提供分析：請專注於「整體銷售趨勢、跨產品品類表現、客戶群體大方向變化、中長期營運戰略調整及資源配置建議」。\n"
+                f"- 若您為 Sales 提供分析：請專注於「個人負責的熱銷商品組合、特定訂單狀態的跟進提醒、個人客戶回購率與近期互動要點、能直接提升下月個人業績的微觀執行指南」。\n\n"
+                f"請產出並回傳嚴格符合 schema 的繁體中文 JSON 數據。"
+            )
+
+            # 呼叫 Gemini 服務，具備 2 次失敗重試機制
+            model_name = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
+            max_retries = 2
+            attempt = 0
+            validated_report = None
+            
+            while attempt <= max_retries:
+                try:
+                    model = genai.GenerativeModel(
+                        model_name=model_name,
+                        system_instruction=system_prompt,
+                        generation_config={"response_mime_type": "application/json"}
+                    )
+                    
+                    response = await model.generate_content_async(user_prompt)
+                    response_text = response.text
+                    
+                    if not response_text:
+                        raise ValueError("Gemini API 回傳空內容")
+
+                    cleaned_text = response_text.strip()
+                    if cleaned_text.startswith("```"):
+                        lines = cleaned_text.splitlines()
+                        if lines[0].startswith("```"):
+                            lines = lines[1:]
+                        if lines and lines[-1].startswith("```"):
+                            lines = lines[:-1]
+                        cleaned_text = "\n".join(lines).strip()
+
+                    report_json = json.loads(cleaned_text)
+                    # 確保必要欄位存在以觸發重試
+                    required_fields = ["summary", "trends", "top_products", "forecast", "recommendations"]
+                    for field in required_fields:
+                        if not report_json.get(field):
+                            raise ValueError(f"缺少必要欄位: {field}")
+                    validated_report = AIReportResponse.model_validate(report_json)
+                    break
+                except Exception as e:
+                    attempt += 1
+                    logger.warning(f"背景生成嘗試 {attempt} 失敗: {str(e)}")
+                    if attempt > max_retries:
+                        raise e
+            
+            if not validated_report:
+                raise ValueError("無法成功解析並驗證 AI 報告")
+
+            report_dict = validated_report.model_dump()
+            report_dict["status"] = "success"
+            report_dict["task_id"] = task_id
+            
+            # 更新為成功狀態與完整內容
+            history_repo = AnalyticsService._get_report_history_repo()
+            history_repo.update({"report_content": report_dict}, {"id": task_id})
+            logger.info(f"背景生成 AI 報告成功，任務 ID: {task_id} 已更新。")
+            
+        except Exception as ex:
+            logger.error(f"背景生成 AI 報告時發生致命錯誤，任務 ID: {task_id}, 錯誤: {str(ex)}")
+            try:
+                history_repo = AnalyticsService._get_report_history_repo()
+                failed_content = {
+                    "status": "failed",
+                    "task_id": task_id,
+                    "error": "AI 分析服務目前忙碌中，請稍後再試。"
+                }
+                history_repo.update({"report_content": failed_content}, {"id": task_id})
+            except Exception as ue:
+                logger.error(f"更新任務為失敗狀態時也失敗: {str(ue)}")
+
+    @staticmethod
+    async def send_email_webhook_task(email: str, filters: dict, report_summary: str, report_content: dict) -> None:
+        """
+        以 BackgroundTasks 將報告以 JSON 發送至 N8N_WEBHOOK_URL
+        """
+        n8n_url = os.getenv("N8N_WEBHOOK_URL")
+        payload = {
+            "email": email,
+            "filters": filters,
+            "report_summary": report_summary,
+            "report_content": report_content,
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        }
+        
+        if n8n_url:
+            import httpx
+            try:
+                async with httpx.AsyncClient() as client:
+                    res = await client.post(n8n_url, json=payload, timeout=10.0)
+                    logger.info(f"成功發送 Webhook 至 n8n. 狀態碼: {res.status_code}")
+            except Exception as e:
+                logger.error(f"發送 Webhook 至 n8n 失敗: {str(e)}")
+        else:
+            logger.warning(f"[Mock Email Send] N8N_WEBHOOK_URL 未配置。模擬發送成功給 {email}，數據: {json.dumps(payload, ensure_ascii=False)}")
+
+    @staticmethod
+    async def get_subscription(user: dict) -> dict:
+        """
+        獲取當前使用者的訂閱偏好設定。
+        """
+        profile = user.get("profile", user)
+        user_id = user.get("id") or profile.get("id")
+        email = profile.get("email") or ""
+        
+        if not user_id:
+            raise HTTPException(status_code=400, detail="無法識別的使用者 ID")
+            
+        sub_repo = AnalyticsService._get_subscription_repo()
+        sub = sub_repo.get_by_user(str(user_id))
+        
+        if not sub:
+            # 預設回傳未訂閱狀態
+            return {
+                "user_id": user_id,
+                "email": email,
+                "is_subscribed": False,
+                "frequency": "weekly",
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }
+        return sub
+
+    @staticmethod
+    async def update_subscription(subscription_update: dict, user: dict) -> dict:
+        """
+        更新當前使用者的訂閱偏好設定。
+        """
+        profile = user.get("profile", user)
+        user_id = user.get("id") or profile.get("id")
+        email = profile.get("email") or ""
+        
+        if not user_id:
+            raise HTTPException(status_code=400, detail="無法識別的使用者 ID")
+            
+        is_subscribed = subscription_update.get("is_subscribed", False)
+        frequency = subscription_update.get("frequency", "weekly")
+        
+        sub_repo = AnalyticsService._get_subscription_repo()
+        res = sub_repo.save_subscription(
+            user_id=str(user_id),
+            email=email,
+            is_subscribed=is_subscribed,
+            frequency=frequency
+        )
+        return res
+

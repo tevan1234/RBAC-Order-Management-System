@@ -15,6 +15,109 @@ const {
 } = window.Recharts || {};
 
 function AISalesReport({ reportData, userRole }) {
+  // 訂閱設定狀態
+  const [subscribed, setSubscribed] = React.useState(false);
+  const [frequency, setFrequency] = React.useState('weekly');
+  const [subLoading, setSubLoading] = React.useState(true);
+  const [emailSending, setEmailSending] = React.useState(false);
+
+  // 取得訂閱資料
+  React.useEffect(() => {
+    let active = true;
+    const fetchSubscription = async () => {
+      try {
+        const data = await window.apiRequest('/analytics/subscription');
+        if (data && active) {
+          setSubscribed(data.is_subscribed);
+          setFrequency(data.frequency || 'weekly');
+        }
+      } catch (e) {
+        console.error("取得訂閱偏好失敗:", e);
+      } finally {
+        if (active) setSubLoading(false);
+      }
+    };
+    fetchSubscription();
+    return () => { active = false; };
+  }, []);
+
+  // 儲存訂閱設定
+  const handleSaveSubscription = async () => {
+    setSubLoading(true);
+    try {
+      await window.apiRequest('/analytics/subscription', {
+        method: 'POST',
+        body: JSON.stringify({
+          is_subscribed: subscribed,
+          frequency: frequency
+        })
+      });
+      if (window.showNotification) {
+        window.showNotification('訂閱偏好設定已儲存！', 'success');
+      } else {
+        alert('訂閱偏好設定已儲存！');
+      }
+    } catch (e) {
+      if (window.showNotification) {
+        window.showNotification('儲存訂閱設定失敗，請稍後再試。', 'error');
+      } else {
+        alert('儲存訂閱設定失敗，請稍後再試。');
+      }
+    } finally {
+      setSubLoading(false);
+    }
+  };
+
+  // 立即發送測試郵件
+  const handleSendTestEmail = async () => {
+    if (!reportData) return;
+    setEmailSending(true);
+    try {
+      const currentUser = window.getCurrentUser ? window.getCurrentUser() : null;
+      const email = currentUser?.email;
+      if (!email) {
+        throw new Error('未取得使用者 Email，請重新登入。');
+      }
+
+      const dateFrom = document.getElementById('analyticsDateFrom')?.value || '';
+      const dateTo = document.getElementById('analyticsDateTo')?.value || '';
+      const container = document.getElementById('analyticsReport');
+      const customerId = container?.dataset.customerId || null;
+      const productId = container?.dataset.productId || null;
+
+      const filters = {
+        date_from: dateFrom,
+        date_to: dateTo,
+        customer_id: customerId,
+        product_id: productId
+      };
+
+      await window.apiRequest('/analytics/send-report-email', {
+        method: 'POST',
+        body: JSON.stringify({
+          email: email,
+          filters: filters,
+          report_summary: reportData.summary || 'AI 銷售分析速報',
+          report_content: reportData
+        })
+      });
+      if (window.showNotification) {
+        window.showNotification('測試分析報告郵件已成功寄出！', 'success');
+      } else {
+        alert('測試分析報告郵件已成功寄出！');
+      }
+    } catch (e) {
+      const errMsg = e.message || '發送測試郵件失敗，請檢查信箱設定或 Webhook。';
+      if (window.showNotification) {
+        window.showNotification(errMsg, 'error');
+      } else {
+        alert(errMsg);
+      }
+    } finally {
+      setEmailSending(false);
+    }
+  };
+
   if (!reportData) {
     return (
       <div className="flex flex-col items-center justify-center p-12 text-center bg-white border border-slate-100 rounded-3xl shadow-xl">
@@ -110,6 +213,88 @@ function AISalesReport({ reportData, userRole }) {
               <div className="text-xs text-indigo-200">當前角色</div>
               <div className="text-lg font-bold uppercase tracking-wider">{userRole}</div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* 📧 AI 銷售分析自動化訂閱偏好設定面板 */}
+      <div className="bg-white border border-slate-100 rounded-3xl shadow-sm hover:shadow-md transition-shadow duration-300 p-6">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+          <div className="space-y-1">
+            <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              📧 AI 銷售分析自動化定期訂閱偏好
+            </h2>
+            <p className="text-xs text-slate-500">
+              設定訂閱後，系統將透過 AI 引擎自動定期產出銷售分析洞察，並主動發送至您的電子信箱
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-4">
+            {subLoading ? (
+              <span className="text-xs text-slate-400">⏳ 讀取設定中...</span>
+            ) : (
+              <>
+                {/* 啟用開關 */}
+                <label className="inline-flex items-center cursor-pointer select-none">
+                  <input 
+                    type="checkbox" 
+                    checked={subscribed} 
+                    onChange={(e) => setSubscribed(e.target.checked)} 
+                    className="sr-only peer"
+                  />
+                  <div className="relative w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+                  <span className="ms-2.5 text-sm font-semibold text-slate-700">
+                    {subscribed ? '🔔 已啟用' : '🔕 已停用'}
+                  </span>
+                </label>
+
+                {/* 頻率選擇器 */}
+                {subscribed && (
+                  <div className="flex items-center gap-1 bg-slate-50 border border-slate-100 rounded-xl p-1">
+                    <button 
+                      onClick={() => setFrequency('weekly')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                        frequency === 'weekly' 
+                          ? 'bg-indigo-600 text-white shadow-sm' 
+                          : 'text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      每週
+                    </button>
+                    <button 
+                      onClick={() => setFrequency('monthly')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                        frequency === 'monthly' 
+                          ? 'bg-indigo-600 text-white shadow-sm' 
+                          : 'text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      每月
+                    </button>
+                  </div>
+                )}
+
+                {/* 儲存設定按鈕 */}
+                <button
+                  onClick={handleSaveSubscription}
+                  disabled={subLoading}
+                  className="px-4 py-2 bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-xs font-bold rounded-xl shadow-md hover:shadow-lg hover:from-indigo-700 hover:to-violet-700 active:scale-[0.98] transition-all disabled:opacity-50 disabled:pointer-events-none"
+                >
+                  💾 儲存偏好
+                </button>
+
+                <div className="w-[1px] h-6 bg-slate-200 mx-2 hidden sm:block"></div>
+
+                {/* 立即發送測試郵件按鈕 */}
+                <button
+                  onClick={handleSendTestEmail}
+                  disabled={emailSending}
+                  className="px-4 py-2 bg-slate-50 border border-slate-200 hover:bg-slate-100 hover:border-slate-300 text-slate-700 text-xs font-bold rounded-xl active:scale-[0.98] transition-all flex items-center gap-1.5 disabled:opacity-50 disabled:pointer-events-none"
+                >
+                  {emailSending ? '✉️ 寄送中...' : '🚀 寄送測試信'}
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>

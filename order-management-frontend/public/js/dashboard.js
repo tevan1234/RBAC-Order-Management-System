@@ -2,7 +2,7 @@
 import { getCurrentUser, logout, updateCurrentUser } from './auth.js';
 import { isAdmin, canCreateOrder, canCreateCustomer, canEditOrder, canVoidOrder, canCompleteOrder, canEditCustomer, canVoidCustomer, canEditOtherUser, canDeactivateUser, getMenuItems, canCreateProduct, canEditProduct } from './rbac.js';
 import { getOrders, saveOrder as saveOrderApi, updateOrder, updateOrderStatus, getCustomers, saveCustomer as saveCustomerApi, updateCustomer, getProducts, saveProduct as saveProductApi, updateProduct, getUsers, saveUser, updateUser, getLogs } from './data.js';
-import { formatDate, formatDateISO, generateEmployeeId, initDropdown, setDropdownValue, getDropdownValue, showNotification, showConfirm, renderWithTooltip, escapeHtml, validateEmail, validateEmployeeId, validateAmount } from './utils.js';
+import { formatDate, formatDateISO, generateEmployeeId, initDropdown, setDropdownValue, getDropdownValue, showNotification, showConfirm, renderWithTooltip, escapeHtml, validateEmail, validateEmployeeId, validateAmount, apiRequest } from './utils.js?v=1.0.1';
 
 // ── 全域快取 ──
 let cachedOrders = [], cachedCustomers = [], cachedProducts = [], cachedUsers = [], cachedLogs = [];
@@ -193,7 +193,7 @@ async function navigateTo(section, filters = null) {
   }
 
   const map = {
-    dashboard: () => { updateOverviewStats(); renderOrdersList(); },
+    dashboard: () => { updateOverviewStats(); renderOrdersList(); loadDashboardAiWidget(); },
     orders: renderOrdersList,
     customers: renderCustomersList,
     products: renderProductsList,
@@ -1348,6 +1348,10 @@ function bindEvents() {
 
     await navigateTo('analytics', { dateFrom, dateTo, customerId, productId });
   });
+
+  f('refreshAiWidgetBtn')?.addEventListener('click', () => {
+    loadDashboardAiWidget();
+  });
 }
 
 // ── 可見性過濾 ──
@@ -1367,11 +1371,59 @@ function getVisibleCustomers(u) {
 }
 function toSnake(s) { return s.replace(/([A-Z])/g, m => '_' + m.toLowerCase()); }
 
+// ── AI 銷售速報 Widget ──
+async function loadDashboardAiWidget() {
+  const widget = f('dashboardAiWidget');
+  const title = f('dashboardAiWidgetTitle');
+  const content = f('dashboardAiWidgetContent');
+  const refreshBtn = f('refreshAiWidgetBtn');
+  
+  if (!widget || !title || !content) return;
+  
+  widget.style.display = 'block';
+  
+  // 顯示骨架屏
+  content.innerHTML = `
+    <div class="widget-skeleton">
+      <div class="skeleton-line" style="height: 14px; background: rgba(124, 58, 237, 0.08); margin-bottom: 8px; border-radius: 4px; width: 100%;"></div>
+      <div class="skeleton-line" style="height: 14px; background: rgba(124, 58, 237, 0.08); margin-bottom: 8px; border-radius: 4px; width: 90%;"></div>
+      <div class="skeleton-line" style="height: 14px; background: rgba(124, 58, 237, 0.08); border-radius: 4px; width: 75%;"></div>
+    </div>
+  `;
+  title.textContent = '📊 過去 7 日銷售速報 (AI 正在運算中...)';
+  
+  if (refreshBtn) {
+    refreshBtn.disabled = true;
+    refreshBtn.style.cursor = 'not-allowed';
+    refreshBtn.style.transform = 'rotate(360deg)';
+  }
+  
+  try {
+    const data = await apiRequest('/analytics/realtime-insights');
+    const dateFromFormatted = data.date_from.replace(/-/g, '/');
+    const dateToFormatted = data.date_to.replace(/-/g, '/');
+    title.textContent = `📊 AI 銷售速報 (${dateFromFormatted} ～ ${dateToFormatted})`;
+    content.innerHTML = `<p class="widget-insight-text">${escapeHtml(data.insights)}</p>`;
+  } catch (e) {
+    console.error('loadDashboardAiWidget error:', e);
+    title.textContent = '📊 AI 銷售速報';
+    content.innerHTML = `<p class="widget-insight-text" style="color: #ef4444; font-weight: 600;">AI 思考太用力了，請稍後再試。</p>`;
+  } finally {
+    if (refreshBtn) {
+      refreshBtn.disabled = false;
+      refreshBtn.style.cursor = 'pointer';
+      refreshBtn.style.transform = 'rotate(0deg)';
+    }
+  }
+}
+
 // ── 全域暴露 ──
 window.navigateTo = navigateTo;
 window.openOrderModal = openOrderModal;
 window.openCustomerModal = openCustomerModal;
 window.openUserModal = openUserModal;
+window.showNotification = showNotification;
+window.showConfirm = showConfirm;
 
 initDashboard();
 export { loadDashboardData, navigateTo };

@@ -69,11 +69,21 @@ async function generateReport(dateFrom, dateTo, customerId = null, productId = n
       }
       delete container._reactRoot;
     }
-    container.innerHTML = '';
+    container.innerHTML = `
+      <div class="analytics-processing-loading" style="text-align: center; padding: 40px 20px; color: #7c3aed;">
+        <div class="widget-skeleton" style="margin-bottom: 20px;">
+          <div class="skeleton-line" style="height: 14px; background: rgba(124, 58, 237, 0.08); margin-bottom: 8px; border-radius: 4px; width: 100%;"></div>
+          <div class="skeleton-line" style="height: 14px; background: rgba(124, 58, 237, 0.08); margin-bottom: 8px; border-radius: 4px; width: 90%;"></div>
+          <div class="skeleton-line" style="height: 14px; background: rgba(124, 58, 237, 0.08); border-radius: 4px; width: 75%;"></div>
+        </div>
+        <p style="font-weight: 600; font-size: 15px; margin: 0; animation: skeletonPulse 1.5s infinite ease-in-out;">🤖 AI 正在深入分析您的銷售數據並撰寫報告，請稍候...</p>
+      </div>
+    `;
   }
   
   try {
-    const report = await apiRequest(
+    // 1. 發送非同步任務請求
+    const taskInit = await apiRequest(
       '/analytics/generate-report',
       {
         method: 'POST',
@@ -85,6 +95,51 @@ async function generateReport(dateFrom, dateTo, customerId = null, productId = n
         })
       }
     );
+    
+    const taskId = taskInit.task_id;
+    if (!taskId) {
+      throw new Error('未取得任務 ID');
+    }
+    
+    // 2. 輪詢機制 (每 3 秒檢查一次)
+    let reportResult = null;
+    let attempts = 0;
+    const maxAttempts = 40; // 最多輪詢 2 分鐘 (40 * 3 秒)
+    
+    while (window.isAnalyticsLoading && attempts < maxAttempts) {
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      attempts++;
+      
+      // 若在等待期間使用者切換了頁面，則中斷
+      if (!window.isAnalyticsLoading) {
+        break;
+      }
+      
+      const taskStatus = await apiRequest(`/analytics/task-status/${taskId}`);
+      
+      if (taskStatus.status === 'success') {
+        reportResult = taskStatus;
+        break;
+      } else if (taskStatus.status === 'failed') {
+        throw new Error('AI 思考太用力了，請稍後再試。');
+      }
+      
+      // 更新 loading 文字以示狀態進展
+      const loadingTextEl = container?.querySelector('p');
+      if (loadingTextEl) {
+        if (taskStatus.status === 'processing') {
+          loadingTextEl.textContent = '🤖 AI 正在努力分析並生成完美洞察，請耐心等候...';
+        }
+      }
+    }
+    
+    if (!reportResult && window.isAnalyticsLoading) {
+      throw new Error('AI 思考太用力了，請稍後再試。');
+    }
+    
+    if (!window.isAnalyticsLoading) {
+      return; // 已經切換頁面，不進行後續渲染
+    }
     
     if (container) {
       const currentUser = getCurrentUser();
@@ -98,18 +153,18 @@ async function generateReport(dateFrom, dateTo, customerId = null, productId = n
         }
         container._reactRoot.render(
           React.createElement(window.AISalesReport, {
-            reportData: report,
+            reportData: reportResult,
             userRole: userRole
           })
         );
       } else {
         // 備援方案：若 CDN 或轉譯有延遲，使用純 HTML 備援渲染
-        renderBackupHtml(container, report);
+        renderBackupHtml(container, reportResult);
       }
     }
   } catch (error) {
-    if (container) {
-      let friendlyMessage = "AI 分析服務目前忙碌中，請稍後再試。";
+    if (container && window.isAnalyticsLoading) {
+      let friendlyMessage = "AI 思考太用力了，請稍後再試。";
       const errMsg = error.message ? String(error.message) : "";
       
       // 識別明確的權限錯誤，其餘網路或底層 API 錯誤一律進行安全遮蔽
@@ -117,7 +172,7 @@ async function generateReport(dateFrom, dateTo, customerId = null, productId = n
         friendlyMessage = "權限不足，無法生成 AI 分析報告。";
       }
       
-      container.innerHTML = `<div class="error" style="margin-top: 12px;">❌ 載入失敗: ${escapeHtml(friendlyMessage)}</div>`;
+      container.innerHTML = `<div class="error" style="margin-top: 12px; color: #ef4444; font-weight: 600; text-align: center; padding: 20px;">❌ 載入失敗: ${escapeHtml(friendlyMessage)}</div>`;
     }
   } finally {
     window.isAnalyticsLoading = false;

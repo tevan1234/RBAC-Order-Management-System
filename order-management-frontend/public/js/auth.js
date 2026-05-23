@@ -232,6 +232,9 @@ export function logout() {
 // ── 初始化階段執行 ──
 restoreSession();
 
+// 供 React 元件等全域直接呼叫
+window.getCurrentUser = getCurrentUser;
+
 // 監聽 unload 前寫入備份，確保 F5 重整不遺失登入狀態
 window.addEventListener('beforeunload', () => {
   saveSessionBackup();

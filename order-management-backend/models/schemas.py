@@ -336,11 +336,13 @@ class ForecastDetail(BaseModel):
 
 
 class AIReportResponse(BaseModel):
-    summary: str = Field(..., max_length=20, description="AI 報告簡短摘要 (20字以內)")
-    trends: TrendDetail = Field(..., description="趨勢分析")
-    top_products: List[TopProductDetail] = Field(..., description="熱銷商品分析")
-    forecast: ForecastDetail = Field(..., description="未來 30 天預測")
-    recommendations: List[str] = Field(..., description="具體行動建議的陣列")
+    status: str = Field("success", description="生成狀態，例如 'success' 或 'processing'")
+    task_id: Optional[str] = Field(None, description="背景任務 ID")
+    summary: Optional[str] = Field(None, max_length=20, description="AI 報告簡短摘要 (20字以內)")
+    trends: Optional[TrendDetail] = Field(None, description="趨勢分析")
+    top_products: Optional[List[TopProductDetail]] = Field(None, description="熱銷商品分析")
+    forecast: Optional[ForecastDetail] = Field(None, description="未來 30 天預測")
+    recommendations: Optional[List[str]] = Field(None, description="具體行動建議的陣列")
 
 
 class HistoryItemResponse(BaseModel):
@@ -354,6 +356,34 @@ class HistoryItemResponse(BaseModel):
 
 class HistoryListResponse(BaseModel):
     history: List[HistoryItemResponse] = Field(..., description="歷史報告清單")
+
+
+class SubscriptionSchema(BaseModel):
+    user_id: UUID = Field(..., description="使用者 ID")
+    email: str = Field(..., description="電子郵件信箱")
+    is_subscribed: bool = Field(..., description="是否訂閱")
+    frequency: str = Field(..., description="訂閱頻率 (daily, weekly, monthly)")
+    updated_at: datetime = Field(..., description="最後更新時間")
+
+
+class SubscriptionUpdate(BaseModel):
+    is_subscribed: bool = Field(..., description="是否訂閱")
+    frequency: str = Field(..., description="訂閱頻率 (daily, weekly, monthly)")
+
+
+class RealtimeInsightsResponse(BaseModel):
+    insights: str = Field(..., description="AI 銷售分析速報簡短心得")
+    date_from: str = Field(..., description="銷售數據計算開始日期 (YYYY-MM-DD)")
+    date_to: str = Field(..., description="銷售數據計算結束日期 (YYYY-MM-DD)")
+
+
+class SendEmailRequest(BaseModel):
+    email: EmailStr = Field(..., description="接收報告的電子郵件信箱")
+    filters: dict = Field(..., description="篩選參數")
+    report_summary: str = Field(..., description="報告簡短摘要")
+    report_content: dict = Field(..., description="報告完整內容")
+
+
 
 
 

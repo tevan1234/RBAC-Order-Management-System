@@ -55,6 +55,7 @@ export async function renderAnalyticsSection(filters = {}) {
 }
 
 async function generateReport(dateFrom, dateTo, customerId = null, productId = null) {
+  window.isAnalyticsLoading = true;
   const loading = document.getElementById('analyticsLoading');
   const container = document.getElementById('analyticsReport');
   
@@ -119,6 +120,7 @@ async function generateReport(dateFrom, dateTo, customerId = null, productId = n
       container.innerHTML = `<div class="error" style="margin-top: 12px;">❌ 載入失敗: ${escapeHtml(friendlyMessage)}</div>`;
     }
   } finally {
+    window.isAnalyticsLoading = false;
     if (loading) loading.style.display = 'none';
   }
 }
@@ -245,6 +247,202 @@ async function handleDownload(endpoint, defaultFilename) {
   }
 }
 
+
+// ============================================================
+// Phase 6 - 歷史報告 Drawer 功能實作
+// ============================================================
+
+let historyDrawerBound = false;
+
+/**
+ * 格式化 filter_parameters 為易讀的 Tag 資料陣列
+ */
+function formatHistoryTags(filters) {
+  const tags = [];
+  if (!filters) return tags;
+
+  // 日期範圍
+  const dateFrom = filters.date_from || filters.dateFrom;
+  const dateTo = filters.date_to || filters.dateTo;
+  if (dateFrom && dateTo) {
+    tags.push({ icon: '📅', text: `${dateFrom} ~ ${dateTo}` });
+  } else if (dateFrom) {
+    tags.push({ icon: '📅', text: `起始：${dateFrom}` });
+  } else if (dateTo) {
+    tags.push({ icon: '📅', text: `截止：${dateTo}` });
+  }
+
+  // 客戶篩選
+  const customerId = filters.customer_id || filters.customerId;
+  if (customerId) {
+    tags.push({ icon: '👤', text: `客戶：${customerId}` });
+  }
+
+  // 產品篩選
+  const productId = filters.product_id || filters.productId;
+  if (productId) {
+    tags.push({ icon: '📦', text: `產品：${productId}` });
+  }
+
+  if (tags.length === 0) {
+    tags.push({ icon: '🔍', text: '全範圍查詢' });
+  }
+
+  return tags;
+}
+
+/**
+ * 格式化 UTC 時間為台灣本地時間的易讀字串
+ */
+function formatHistoryTime(isoString) {
+  try {
+    const date = new Date(isoString);
+    return date.toLocaleString('zh-TW', {
+      timeZone: 'Asia/Taipei',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch {
+    return isoString;
+  }
+}
+
+/**
+ * 載入並渲染歷史紀錄列表到 Drawer 中
+ */
+async function loadHistoryList() {
+  const listEl = document.getElementById('historyList');
+  if (!listEl) return;
+
+  listEl.innerHTML = '<div class="history-loading">⏳ 載入中...</div>';
+
+  try {
+    const data = await apiRequest('/analytics/history', { method: 'GET' });
+    const history = data.history || [];
+
+    if (history.length === 0) {
+      listEl.innerHTML = '<div class="history-empty">📭 尚無歷史報告紀錄<br><small>生成第一份報告後，它將出現在這裡。</small></div>';
+      return;
+    }
+
+    listEl.innerHTML = '';
+
+    history.forEach((item, index) => {
+      const tags = formatHistoryTags(item.filter_parameters || {});
+      const timeStr = formatHistoryTime(item.created_at);
+
+      const card = document.createElement('div');
+      card.className = 'history-item';
+      card.dataset.index = index;
+
+      const tagsHtml = tags.map(t =>
+        `<span class="history-tag">${t.icon} ${escapeHtml(t.text)}</span>`
+      ).join('');
+
+      card.innerHTML = `
+        <div class="history-item-meta">${escapeHtml(timeStr)}</div>
+        <div class="history-tags">${tagsHtml}</div>
+        <button class="btn-reapply" data-index="${index}" title="重新套用此篩選條件並生成報告">
+          🔄 重新篩選
+        </button>
+      `;
+
+      // 儲存 filter_parameters 到 dataset
+      card.dataset.filters = JSON.stringify(item.filter_parameters || {});
+
+      listEl.appendChild(card);
+    });
+
+    // 綁定「重新篩選」按鈕事件（事件委派）
+    listEl.addEventListener('click', async (e) => {
+      const btn = e.target.closest('.btn-reapply');
+      if (!btn) return;
+
+      const card = btn.closest('.history-item');
+      if (!card) return;
+
+      const filters = JSON.parse(card.dataset.filters || '{}');
+
+      // 關閉 Drawer
+      closeHistoryDrawer();
+
+      // 填入日期選擇器（支援 snake_case 與 camelCase 兩種格式）
+      const dateFrom = filters.date_from || filters.dateFrom || '';
+      const dateTo = filters.date_to || filters.dateTo || '';
+
+      const fromEl = document.getElementById('analyticsDateFrom');
+      const toEl = document.getElementById('analyticsDateTo');
+      if (fromEl) fromEl.value = dateFrom;
+      if (toEl) toEl.value = dateTo;
+
+      // 取出 customer/product ID
+      const customerId = filters.customer_id || filters.customerId || null;
+      const productId = filters.product_id || filters.productId || null;
+
+      // 更新 analyticsReport 的 dataset（供下載功能使用）
+      const container = document.getElementById('analyticsReport');
+      if (container) {
+        container.dataset.customerId = customerId || '';
+        container.dataset.productId = productId || '';
+      }
+
+      // 主動觸發報告生成
+      await generateReport(dateFrom, dateTo, customerId, productId);
+    });
+
+  } catch (error) {
+    listEl.innerHTML = `<div class="history-empty">❌ 載入失敗：${escapeHtml(error.message)}</div>`;
+  }
+}
+
+/**
+ * 開啟 Drawer 並載入歷史列表
+ */
+function openHistoryDrawer() {
+  const drawer = document.getElementById('historyDrawer');
+  const overlay = document.getElementById('historyDrawerOverlay');
+  if (drawer) drawer.classList.add('open');
+  if (overlay) overlay.classList.add('active');
+  document.body.style.overflow = 'hidden';
+
+  // 每次開啟都重新載入最新的歷史列表
+  loadHistoryList();
+}
+
+/**
+ * 關閉 Drawer
+ */
+function closeHistoryDrawer() {
+  const drawer = document.getElementById('historyDrawer');
+  const overlay = document.getElementById('historyDrawerOverlay');
+  if (drawer) drawer.classList.remove('open');
+  if (overlay) overlay.classList.remove('active');
+  document.body.style.overflow = '';
+}
+
+/**
+ * 綁定 Drawer 相關事件（只綁定一次）
+ */
+function bindHistoryDrawerEvents() {
+  if (historyDrawerBound) return;
+
+  document.getElementById('historyDrawerBtn')?.addEventListener('click', openHistoryDrawer);
+  document.getElementById('historyDrawerClose')?.addEventListener('click', closeHistoryDrawer);
+  document.getElementById('historyDrawerOverlay')?.addEventListener('click', closeHistoryDrawer);
+
+  // ESC 鍵關閉 Drawer
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      const drawer = document.getElementById('historyDrawer');
+      if (drawer?.classList.contains('open')) closeHistoryDrawer();
+    }
+  });
+
+  historyDrawerBound = true;
+}
 function bindAnalyticsEvents() {
   if (isEventsBound) return;
   
@@ -279,6 +477,7 @@ function bindAnalyticsEvents() {
     await handleDownload('/analytics/export-excel', 'sales_report.xlsx');
   });
   
+  bindHistoryDrawerEvents();
   isEventsBound = true;
 }
 

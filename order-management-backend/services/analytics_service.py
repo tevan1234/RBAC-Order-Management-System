@@ -4,7 +4,7 @@ import logging
 import google.generativeai as genai
 from fastapi import HTTPException
 from services.supabase_client import get_supabase_admin
-from repositories import OrderRepository, ProductRepository
+from repositories import OrderRepository, ProductRepository, ReportHistoryRepository
 from typing import List, Dict, Any
 from datetime import datetime, timezone, timedelta
 from models.schemas import AIReportResponse
@@ -25,6 +25,10 @@ class AnalyticsService:
     @staticmethod
     def _get_product_repo() -> ProductRepository:
         return ProductRepository(get_supabase_admin())
+
+    @staticmethod
+    def _get_report_history_repo() -> ReportHistoryRepository:
+        return ReportHistoryRepository(get_supabase_admin())
 
     @staticmethod
     async def aggregate_orders(filters: dict, user: dict) -> dict:
@@ -133,16 +137,12 @@ class AnalyticsService:
         # 按銷售金額由大到小排序，利於商務圖表呈現
         product_stats_list.sort(key=lambda x: x["total_amount"], reverse=True)
 
-        # 時間序列依日期排序
-        sorted_time_series = {k: time_series[k] for k in sorted(time_series.keys())}
-
-        # 4. 組裝回傳字典 (將會自動套用於 AggregatedStats 驗證)
         return {
             "total_orders": total_orders,
             "total_amount": total_amount,
             "average_amount": average_amount,
             "product_stats": product_stats_list,
-            "time_series": sorted_time_series,
+            "time_series": time_series,
             "status_stats": status_stats
         }
 
@@ -153,11 +153,25 @@ class AnalyticsService:
         內部先呼叫 aggregate_orders 進行硬性角色隔離之數據聚合，
         然後依據當前使用者角色提供動態的 AI 商業智慧分析，支援 2 次失敗重試。
         """
+        # 獲取使用者 ID
+        profile = user.get("profile", user)
+        user_id = user.get("id") or profile.get("id")
+
+        # 0. 每日快取檢查 (Daily Cache Check)：24 小時內且相同 filter 參數直接回傳
+        if user_id:
+            try:
+                history_repo = AnalyticsService._get_report_history_repo()
+                cached_record = history_repo.get_recent_cache(str(user_id), filters, hours=24)
+                if cached_record:
+                    logger.info(f"AI 銷售分析快取命中 (Cache HIT)! 使用者 ID: {user_id}, 篩選條件: {filters}")
+                    return cached_record.get("report_content") or {}
+            except Exception as ce:
+                logger.error(f"快取檢查過程發生錯誤，將直接呼叫 API 生成: {str(ce)}")
+
         # 1. 數據獲取 (包含角色隔離防禦)
         aggregated_data = await AnalyticsService.aggregate_orders(filters, user)
 
         # 2. 獲取使用者角色並調整分析視角
-        profile = user.get("profile", user)
         role = profile.get("role")
 
         if role in ["admin", "viewer"]:
@@ -271,9 +285,24 @@ class AnalyticsService:
 
                 # 使用 Pydantic 強制進行 schema 驗證與欄位格式清洗
                 validated_report = AIReportResponse.model_validate(report_json)
+                report_dict = validated_report.model_dump()
+
+                # 5. 生成成功後，非同步寫入歷史紀錄表 (JSONB 快取機制)
+                if user_id:
+                    try:
+                        history_repo = AnalyticsService._get_report_history_repo()
+                        history_repo.save_report(
+                            user_id=str(user_id),
+                            report_type="sales_analytics",
+                            filter_parameters=filters,
+                            report_content=report_dict
+                        )
+                        logger.info(f"AI 銷售分析已存入歷史紀錄與快取。使用者 ID: {user_id}")
+                    except Exception as he:
+                        logger.error(f"寫入銷售報告歷史紀錄失敗: {str(he)}")
 
                 # 驗證成功，直接回傳 model_dump
-                return validated_report.model_dump()
+                return report_dict
 
             except Exception as e:
                 attempt += 1
@@ -289,4 +318,31 @@ class AnalyticsService:
             detail="AI 分析服務目前忙碌中，請稍後再試。"
         )
 
+    @staticmethod
+    async def get_report_history(user: dict) -> list:
+        """
+        獲取當前使用者的 AI 銷售分析歷史報告紀錄清單。
+        """
+        profile = user.get("profile", user)
+        user_id = user.get("id") or profile.get("id")
+        if not user_id:
+            return []
 
+        try:
+            history_repo = AnalyticsService._get_report_history_repo()
+            records = history_repo.get_by_user(str(user_id), limit=10)
+            
+            history_list = []
+            for r in records:
+                history_list.append({
+                    "id": r.get("id"),
+                    "user_id": r.get("user_id"),
+                    "report_type": r.get("report_type"),
+                    "filter_parameters": r.get("filter_parameters") or {},
+                    "report_content": r.get("report_content") or {},
+                    "created_at": r.get("created_at")
+                })
+            return history_list
+        except Exception as e:
+            logger.error(f"獲取銷售報告歷史清單失敗 (user_id: {user_id}): {str(e)}")
+            return []

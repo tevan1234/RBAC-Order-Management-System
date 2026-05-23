@@ -343,3 +343,17 @@ class AIReportResponse(BaseModel):
     recommendations: List[str] = Field(..., description="具體行動建議的陣列")
 
 
+class HistoryItemResponse(BaseModel):
+    id: UUID = Field(..., description="歷史紀錄唯一識別碼")
+    user_id: UUID = Field(..., description="使用者 ID")
+    report_type: str = Field(..., description="報告類型")
+    filter_parameters: dict = Field(..., description="篩選過濾參數")
+    report_content: dict = Field(..., description="快取的報告內容")
+    created_at: datetime = Field(..., description="建立時間")
+
+
+class HistoryListResponse(BaseModel):
+    history: List[HistoryItemResponse] = Field(..., description="歷史報告清單")
+
+
+

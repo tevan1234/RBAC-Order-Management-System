@@ -12,7 +12,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/style.css">
-    
+
     <!-- React & ReactDOM v18 -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
@@ -455,6 +455,7 @@
                         <button class="btn-primary" id="generateReportBtn">生成報告</button>
                         <button class="btn-secondary" id="downloadPdfBtn" style="margin-left: 8px;">📄 下載 PDF</button>
                         <button class="btn-secondary" id="downloadExcelBtn" style="margin-left: 8px;">📊 下載 Excel</button>
+                        <button class="btn-secondary" id="historyDrawerBtn" style="margin-left: 8px;">📜 歷史紀錄</button>
                     </div>
 
                     <!-- Loading & 報告顯示區 -->
@@ -700,6 +701,22 @@
     <div class="sidebar-overlay" id="sidebarOverlay"></div>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
     <script type="module" src="js/dashboard.js"></script>
+
+    <!-- 歷史報告 Drawer -->
+    <div class="history-drawer-overlay" id="historyDrawerOverlay"></div>
+    <div class="history-drawer" id="historyDrawer">
+        <div class="history-drawer-header">
+            <h3>📜 歷史分析紀錄</h3>
+            <button class="history-drawer-close" id="historyDrawerClose" title="關閉">
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+        </div>
+        <div class="history-drawer-body" id="historyList">
+            <!-- 歷史紀錄將動態渲染於此 -->
+        </div>
+    </div>
 </body>
 
 </html>

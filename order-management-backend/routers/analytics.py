@@ -1,6 +1,6 @@
 import logging
 from fastapi import APIRouter, Depends, Response
-from models.schemas import AnalyticsRequest, AggregatedStats, AIReportResponse
+from models.schemas import AnalyticsRequest, AggregatedStats, AIReportResponse, HistoryListResponse
 from services.auth_service import get_current_user, require_permission
 from services.analytics_service import AnalyticsService
 from services.export_service import ExportService
@@ -75,5 +75,16 @@ async def export_excel(
             "Access-Control-Expose-Headers": "Content-Disposition"
         }
     )
+
+@router.get("/history", response_model=HistoryListResponse)
+async def get_analytics_history(
+    user: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("ANALYTICS_VIEW"))
+):
+    """
+    獲取當前使用者的 AI 銷售分析歷史報告紀錄清單。
+    """
+    history = await AnalyticsService.get_report_history(user)
+    return {"history": history}
 
 

@@ -48,6 +48,15 @@ function initDashboard() {
   bindEvents();
   loadDashboardData();
   initIdleDetection(); // 啟動閒置偵測
+  
+  // 註冊瀏覽器關閉/重新整理防禦
+  window.addEventListener('beforeunload', (e) => {
+    if (window.isAnalyticsLoading) {
+      e.preventDefault();
+      e.returnValue = "AI 報告生成中，此時離開將中斷生成並浪費 API 額度，確定要離開嗎？";
+      return e.returnValue;
+    }
+  });
   try {
     const p = sessionStorage.getItem('pendingNotification');
     if (p) { const n = JSON.parse(p); showNotification(n.message, n.type); sessionStorage.removeItem('pendingNotification'); }
@@ -131,6 +140,16 @@ async function loadDashboardData() {
 
 // ── 導覽 ──
 async function navigateTo(section, filters = null) {
+  // SPA 內部導航防禦
+  if (window.isAnalyticsLoading && section !== 'analytics') {
+    const confirmLeave = confirm("AI 報告生成中，此時離開將中斷生成並浪費 API 額度，確定要離開嗎？");
+    if (!confirmLeave) {
+      window.location.hash = 'analytics';
+      return; // 中斷切換
+    }
+    window.isAnalyticsLoading = false; // 確定離開則重置狀態
+  }
+
   document.querySelectorAll('.section-content').forEach(s => s.classList.remove('active'));
   document.getElementById('section-' + section)?.classList.add('active');
   document.querySelectorAll('.menu-item').forEach(el => el.classList.toggle('active', el.dataset.section === section));
@@ -1298,14 +1317,14 @@ function bindEvents() {
   f('analyzeOrdersBtn')?.addEventListener('click', async () => {
     const dateFrom = orderSearch.dateFrom || (window.getDate30DaysAgo ? window.getDate30DaysAgo() : '');
     const dateTo = orderSearch.dateTo || (window.getTodayDate ? window.getTodayDate() : '');
-    
+
     let customerId = null;
     let productId = null;
-    
+
     if (orderSearch.keyword) {
       const kw = orderSearch.keyword.toLowerCase().trim();
       if (orderSearch.field === 'customer') {
-        const matchedCust = cachedCustomers.find(c => 
+        const matchedCust = cachedCustomers.find(c =>
           String(getF(c, 'customer_id', 'customerId')).toLowerCase() === kw ||
           String(c.name || c.customer_name || '').toLowerCase().includes(kw)
         );
@@ -1315,7 +1334,7 @@ function bindEvents() {
           customerId = orderSearch.keyword.trim();
         }
       } else if (orderSearch.field === 'product') {
-        const matchedProd = cachedProducts.find(p => 
+        const matchedProd = cachedProducts.find(p =>
           String(getF(p, 'product_id', 'productId')).toLowerCase() === kw ||
           String(p.name || '').toLowerCase().includes(kw)
         );
@@ -1326,7 +1345,7 @@ function bindEvents() {
         }
       }
     }
-    
+
     await navigateTo('analytics', { dateFrom, dateTo, customerId, productId });
   });
 }

@@ -587,29 +587,115 @@ class AnalyticsService:
                 logger.error(f"更新任務為失敗狀態時也失敗: {str(ue)}")
 
     @staticmethod
-    async def send_email_webhook_task(email: str, filters: dict, report_summary: str, report_content: dict) -> None:
+    async def send_report_email_task(email: str, filters: dict, report_summary: str, report_content: dict, user: dict) -> None:
         """
-        以 BackgroundTasks 將報告以 JSON 發送至 N8N_WEBHOOK_URL
+        雙軌制背景發信任務：
+        1. 本地直寄 (ENABLE_SMTP_DIRECT)：生成 PDF / Excel 附件（若為 Viewer 則依 RBAC 安全防禦自動排除 Excel 附件），並使用科技感 HTML 模板發送。
+        2. Webhook 擴充 (ENABLE_N8N_WEBHOOK)：將 Payload 發送至指定的 n8n Webhook 串接外部自動化。
         """
-        n8n_url = os.getenv("N8N_WEBHOOK_URL")
-        payload = {
-            "email": email,
-            "filters": filters,
-            "report_summary": report_summary,
-            "report_content": report_content,
-            "timestamp": datetime.now(timezone.utc).isoformat()
-        }
-        
-        if n8n_url:
-            import httpx
-            try:
-                async with httpx.AsyncClient() as client:
-                    res = await client.post(n8n_url, json=payload, timeout=10.0)
-                    logger.info(f"成功發送 Webhook 至 n8n. 狀態碼: {res.status_code}")
-            except Exception as e:
-                logger.error(f"發送 Webhook 至 n8n 失敗: {str(e)}")
+        # 延遲導入以解決與 ExportService 之間的 Python 循環引用 (Circular Import) 問題
+        from services.export_service import ExportService
+        from services.email_service import EmailService
+        from services.email_template import render_analytics_report_email
+
+        profile = user.get("profile", user)
+        role = profile.get("role", "viewer")
+        employee_id = profile.get("employee_id", "")
+        user_email = profile.get("email") or user.get("email") or ""
+
+        # 優先解析實際收件者信箱：
+        # 如果是真實帳號 EMP0001 且有設定 email，則發送至該使用者的 email；
+        # 其餘皆為假資料，防禦性地 fallback 到 .env 中設定的 SMTP_USER 或 SMTP_FROM，確保開發與測試時能收到真實信件。
+        if employee_id == "EMP0001" and user_email:
+            target_email = user_email
         else:
-            logger.warning(f"[Mock Email Send] N8N_WEBHOOK_URL 未配置。模擬發送成功給 {email}，數據: {json.dumps(payload, ensure_ascii=False)}")
+            target_email = os.getenv("SMTP_USER") or os.getenv("SMTP_FROM") or email
+
+        logger.info(f"開始背景郵件發送任務。原始請求收件者: {email}, 解析後實際發送收件者: {target_email}, 使用者角色: {role}")
+
+        # 1. 處理並組裝附件列表 (本地直寄需要)
+        attachments = []
+        
+        # A. 生成 PDF 報告附件
+        try:
+            pdf_data = await ExportService.generate_pdf(filters, user)
+            if pdf_data:
+                attachments.append({
+                    "data": pdf_data,
+                    "filename": "AI_Sales_Analytics_Report.pdf",
+                    "mime_type": "application/pdf"
+                })
+                logger.info("PDF 報告附件生成成功")
+        except Exception as pe:
+            logger.error(f"生成 PDF 報告附件失敗: {str(pe)}", exc_info=True)
+
+        # B. 安全過濾 (RBAC)：如果角色為 viewer (檢視者)，強制進行安全降級，不生成也不夾帶 Excel 原始明細附件
+        if role == "viewer":
+            logger.info("使用者角色為 Viewer (檢視者)，觸發安全防禦降級機制，排除 Excel 原始明細附件。")
+        else:
+            try:
+                excel_data = await ExportService.generate_excel(filters, user)
+                if excel_data:
+                    attachments.append({
+                        "data": excel_data,
+                        "filename": "Sales_Raw_Data_Details.xlsx",
+                        "mime_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    })
+                    logger.info("Excel 數據明細附件生成成功")
+            except Exception as ee:
+                logger.warning(f"生成 Excel 數據明細附件失敗或被拒絕: {str(ee)}")
+
+        # 2. 軌道一：本地 SMTP 直接發信
+        enable_smtp = os.getenv("ENABLE_SMTP_DIRECT", "True").lower() == "true"
+        if enable_smtp:
+            try:
+                # 渲染高質感 HTML 郵件內文
+                html_content = render_analytics_report_email(
+                    report_summary=report_summary,
+                    report_content=report_content,
+                    filters=filters,
+                    role=role
+                )
+                
+                subject = f"【AI 銷售速報】{report_summary}"
+                text_content = f"您的 AI 銷售分析報告已成功生成。\n摘要: {report_summary}\n請查收信件中夾帶的 PDF 與 Excel 附件以檢視完整數據分析。"
+                
+                # 呼叫非同步 EmailService 發信
+                await EmailService.send_report_with_attachments(
+                    email=target_email,
+                    subject=subject,
+                    html_content=html_content,
+                    text_content=text_content,
+                    attachments=attachments
+                )
+            except Exception as se:
+                logger.error(f"本地 SMTP 直寄通道發信失敗: {str(se)}", exc_info=True)
+
+        # 3. 軌道二：外部 n8n Webhook 調用
+        enable_n8n = os.getenv("ENABLE_N8N_WEBHOOK", "False").lower() == "true"
+        if enable_n8n:
+            n8n_url = os.getenv("N8N_WEBHOOK_URL")
+            payload = {
+                "email": target_email,
+                "filters": filters,
+                "report_summary": report_summary,
+                "report_content": report_content,
+                "role": role,
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            }
+            
+            if n8n_url:
+                import httpx
+                try:
+                    async with httpx.AsyncClient() as client:
+                        res = await client.post(n8n_url, json=payload, timeout=10.0)
+                        logger.info(f"成功發送 Webhook 至 n8n。狀態碼: {res.status_code}")
+                except Exception as ne:
+                    logger.error(f"發送 Webhook 至 n8n 失敗: {str(ne)}")
+            else:
+                logger.warning("[n8n Webhook] n8n Webhook 功能已開啟，但未配置 N8N_WEBHOOK_URL！跳過調用。")
+
+
 
     @staticmethod
     async def get_subscription(user: dict) -> dict:

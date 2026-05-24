@@ -201,14 +201,15 @@ async def send_report_email(
 ):
     """
     手動發送 AI 銷售報告至使用者信箱。
-    封裝「Email、篩選參數、報告摘要、報告內容」為 JSON，以 BackgroundTasks 發送至外部 n8n Webhook。
+    封裝「Email、篩選參數、報告摘要、報告內容」為 JSON，並傳入使用者上下文 (RBAC)，以 BackgroundTasks 發送至外部 n8n Webhook 與/或本地 SMTP 寄送。
     """
     background_tasks.add_task(
-        AnalyticsService.send_email_webhook_task,
+        AnalyticsService.send_report_email_task,
         email=req.email,
         filters=req.filters,
         report_summary=req.report_summary,
-        report_content=req.report_content
+        report_content=req.report_content,
+        user=user
     )
     return {"message": "報告發送任務已成功排入背景佇列"}
 

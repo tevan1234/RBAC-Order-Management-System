@@ -14,6 +14,7 @@ node_modules/
 
 # Backend Specific
 order-management-backend/scratch/
+order-management-backend/.mypy_cache/
 
 # Frontend Specific
 order-management-frontend/node_modules/

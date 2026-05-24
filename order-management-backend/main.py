@@ -12,7 +12,7 @@ from slowapi.middleware import SlowAPIMiddleware
 from services.rate_limiter import limiter
 
 # 匯入路由
-from routers import auth, users, products, orders, customers, audit_logs
+from routers import auth, users, products, orders, customers, audit_logs, analytics
 
 app = FastAPI(title="Order Management System API")
 app.state.limiter = limiter
@@ -41,6 +41,7 @@ app.include_router(products.router, prefix="/api")
 app.include_router(orders.router, prefix="/api")
 app.include_router(customers.router, prefix="/api")
 app.include_router(audit_logs.router, prefix="/api")
+app.include_router(analytics.router, prefix="/api")
 
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded):

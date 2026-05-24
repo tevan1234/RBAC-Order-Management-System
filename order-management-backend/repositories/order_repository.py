@@ -22,3 +22,27 @@ class OrderRepository(BaseRepository):
     def update_order(self, order_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
         res = self.update(data, {"id": order_id})
         return res.data[0] if res.data else {}
+
+    def get_orders_for_analytics(
+        self,
+        owner_id: Optional[str] = None,
+        date_from: Optional[str] = None,
+        date_to: Optional[str] = None,
+        customer_id: Optional[str] = None,
+        product_id: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        query = self.select("*")
+        if owner_id:
+            query = query.eq("owner_id", owner_id)
+        if date_from:
+            query = query.gte("created_at", f"{date_from}T00:00:00")
+        if date_to:
+            query = query.lte("created_at", f"{date_to}T23:59:59.999")
+        if customer_id:
+            query = query.eq("customer", customer_id)
+        if product_id:
+            query = query.eq("product_id", product_id)
+            
+        res = query.execute()
+        return res.data
+

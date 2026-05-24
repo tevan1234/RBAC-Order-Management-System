@@ -16,13 +16,18 @@ class GeminiService:
 
     async def generate_content(self, prompt: str):
         if not self.model:
-            return "Gemini API Key not configured"
+            return "AI 分析服務尚未設定，請聯絡系統管理員。"
         
         try:
             response = self.model.generate_content(prompt)
             return response.text
         except Exception as e:
-            return f"Error generating content: {str(e)}"
+            # 引入 logging 安全地記錄詳細例外
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.exception("GeminiService generate_content failed with exception")
+            return "AI 分析服務目前忙碌中，請稍後再試。"
+
 
 _gemini_service = GeminiService()
 

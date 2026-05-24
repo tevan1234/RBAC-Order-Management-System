@@ -180,7 +180,7 @@ async def test_audit_logs(ac: AsyncClient):
 
 @pytest.mark.asyncio
 async def test_audit_logs_forbidden_for_non_admin(ac: AsyncClient):
-    # 測試非 admin 角色（如 sales）發送請求會被拒絕
+    # 測試非 admin 角色（如 sales）發送請求會被拒絕（安全模糊化為 404 找不到資源或無權限存取）
     sales_user = {
         "id": "uuid-sales",
         "email": "sales@test.com",
@@ -200,8 +200,8 @@ async def test_audit_logs_forbidden_for_non_admin(ac: AsyncClient):
     try:
         headers = {"Authorization": "Bearer fake-token"}
         response = await ac.get("/api/audit/", headers=headers)
-        assert response.status_code == 403
-        assert "無權進行此操作" in response.json()["detail"]
+        assert response.status_code == 404
+        assert "找不到資源或無權限存取" in response.json()["detail"]
     finally:
         # 清除 override，恢復原本 setup_dependencies 中設置的 admin 使用者
         app.dependency_overrides[get_current_user] = lambda: {

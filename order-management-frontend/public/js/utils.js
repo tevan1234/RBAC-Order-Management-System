@@ -55,6 +55,11 @@ export async function apiRequest(endpoint, options = {}) {
   }
 }
 
+// 供 React 元件等全域直接呼叫
+window.apiRequest = apiRequest;
+window.showNotification = showNotification;
+window.showConfirm = showConfirm;
+
 // ============================================================
 // 格式化工具
 // ============================================================

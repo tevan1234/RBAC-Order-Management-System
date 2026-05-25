@@ -495,3 +495,15 @@ export function validateAmount(amount) {
   return !isNaN(num) && num >= 0 && Number.isFinite(num);
 }
 
+// ============================================================
+// DOM 與物件屬性輔助工具 (從 dashboard.js 移入)
+// ============================================================
+export const f = id => document.getElementById(id);
+export const getF = (o, ...keys) => {
+  for (const k of keys) {
+    if (o[k] !== undefined && o[k] !== null) return o[k];
+  }
+  return '';
+};
+export const toSnake = s => s.replace(/([A-Z])/g, m => '_' + m.toLowerCase());
+

@@ -1,5 +1,5 @@
 // analytics-module.js - 獨立模組避免 dashboard.js 過大
-import { apiRequest, escapeHtml, showNotification } from './utils.js';
+import { apiRequest, escapeHtml, showNotification } from './utils.js?v=1.0.1';
 import { getCurrentUser, getToken } from './auth.js';
 
 let isEventsBound = false;
@@ -247,54 +247,28 @@ async function handleDownload(endpoint, defaultFilename) {
 
   try {
     const token = getToken();
-    const headers = {
-      'Content-Type': 'application/json'
-    };
-    if (token) {
-      headers['Authorization'] = `Bearer ${token}`;
-    }
+    
+    // 將 POST 端點映射為對應的 GET 直連端點
+    const directEndpoint = endpoint === '/analytics/export-pdf' 
+      ? '/analytics/export-pdf-direct' 
+      : '/analytics/export-excel-direct';
 
-    const response = await fetch(`http://localhost:8000/api${endpoint}`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        date_from: dateFrom,
-        date_to: dateTo,
-        customer_id: customerId || null,
-        product_id: productId || null
-      })
-    });
+    // 拼接 Query Parameters 篩選參數與認證 token
+    const queryParams = new URLSearchParams();
+    if (dateFrom) queryParams.append('date_from', dateFrom);
+    if (dateTo) queryParams.append('date_to', dateTo);
+    if (customerId) queryParams.append('customer_id', customerId);
+    if (productId) queryParams.append('product_id', productId);
+    if (token) queryParams.append('token', token);
 
-    if (!response.ok) {
-      const errText = await response.text();
-      let errMsg = '下載報告失敗';
-      try {
-        const errJson = JSON.parse(errText);
-        errMsg = errJson.detail || errMsg;
-      } catch (e) {}
-      throw new Error(errMsg);
-    }
+    const downloadUrl = `http://localhost:8000/api${directEndpoint}?${queryParams.toString()}`;
+    
+    console.log(`[下載偵錯] 觸發原生 GET 導航下載。連結: ${downloadUrl}`);
+    
+    // 使用原生的 window.location.href 觸發下載。
+    // 這將被瀏覽器安全防禦機制視為使用者主動發起的原生下載，100% 避開「自動下載」攔截政策！
+    window.location.href = downloadUrl;
 
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-
-    const disposition = response.headers.get('content-disposition');
-    let filename = defaultFilename;
-    if (disposition && disposition.indexOf('attachment') !== -1) {
-      const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
-      const matches = filenameRegex.exec(disposition);
-      if (matches != null && matches[1]) {
-        filename = matches[1].replace(/['"]/g, '');
-      }
-    }
-
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    window.URL.revokeObjectURL(url);
     showNotification('檔案下載成功！', 'success');
   } catch (error) {
     console.error('Download error:', error);
@@ -522,14 +496,21 @@ function bindAnalyticsEvents() {
     await generateReport(dateFrom, dateTo, customerId || null, productId || null);
   });
 
-  // 下載 PDF 按鈕
-  document.getElementById('downloadPdfBtn')?.addEventListener('click', async () => {
-    await handleDownload('/analytics/export-pdf', 'sales_report.pdf');
-  });
+  // 使用事件委派 (Event Delegation) 監聽下載按鈕，徹底解決動態 React 渲染的 Race Condition 問題
+  document.addEventListener('click', async (e) => {
+    const pdfBtn = e.target.closest('#downloadPdfBtn');
+    if (pdfBtn) {
+      e.preventDefault();
+      await handleDownload('/analytics/export-pdf', 'sales_report.pdf');
+      return;
+    }
 
-  // 下載 Excel 按鈕
-  document.getElementById('downloadExcelBtn')?.addEventListener('click', async () => {
-    await handleDownload('/analytics/export-excel', 'sales_report.xlsx');
+    const excelBtn = e.target.closest('#downloadExcelBtn');
+    if (excelBtn) {
+      e.preventDefault();
+      await handleDownload('/analytics/export-excel', 'sales_report.xlsx');
+      return;
+    }
   });
   
   bindHistoryDrawerEvents();

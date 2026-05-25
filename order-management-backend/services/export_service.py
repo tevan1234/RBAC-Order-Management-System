@@ -108,11 +108,16 @@ class ExportService:
         username = f"{display_name} ({employee_id_val})" if employee_id_val else display_name
         
         # B. 嘗試調用 Gemini 獲取 AI 商業報告 (作為 PDF 亮點，若失敗則優雅降級)
+        import asyncio
         ai_report = None
         try:
-            ai_report = await AnalyticsService.generate_ai_report(filters, user)
+            # 限制最多等待 15 秒，避免 AI 服務無限阻塞影響使用者下載 PDF 體驗
+            ai_report = await asyncio.wait_for(
+                AnalyticsService.generate_ai_report(filters, user),
+                timeout=15.0
+            )
         except Exception as e:
-            logger.warning(f"PDF 匯出中呼叫 AI 報告失敗 (優雅降級為僅顯示數據): {str(e)}")
+            logger.warning(f"PDF 匯出中呼叫 AI 報告失敗或超時 (優雅降級為僅顯示數據): {str(e)}")
 
         # C. 繪製 Matplotlib 圖表
         chart_line_img = None
@@ -378,7 +383,8 @@ class ExportService:
         story.append(Spacer(1, 12))
         
         # 5. AI 商業智慧洞察 (Wowing 亮點區塊)
-        if ai_report:
+        # 防禦性檢查：排除正在背景處理中(processing)或失敗(failed)的 placeholder 快取紀錄，且必須有實際的 summary
+        if ai_report and isinstance(ai_report, dict) and ai_report.get("status") not in ["processing", "failed"] and ai_report.get("summary"):
             story.append(Paragraph("四、 Gemini AI 商業智慧洞察與策略建議", heading_style))
             
             ai_content = []

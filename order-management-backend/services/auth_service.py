@@ -1,4 +1,4 @@
-from fastapi import Header, HTTPException, Depends, Request
+from fastapi import Header, HTTPException, Depends, Request, Query
 from services.supabase_client import get_supabase, get_supabase_admin
 from repositories import UserRepository, OrderRepository, CustomerRepository
 from typing import List, Optional, Callable, Any
@@ -12,15 +12,26 @@ from services.audit_service import log_action
 _profile_cache = {}
 CACHE_TTL = 60
 
-async def get_current_user(authorization: str = Header(...)):
-    """從 token 取得目前使用者及其 Profile 角色 (具備 60 秒緩存優化)"""
+async def get_current_user(
+    authorization: Optional[str] = Header(None),
+    token: Optional[str] = Query(None)
+):
+    """從 token 取得目前使用者及其 Profile 角色 (支援 Header 與 Query Parameter，並具備 60 秒緩存優化)"""
     try:
-        token = authorization.replace("Bearer ", "")
+        jwt_token = None
+        if authorization:
+            jwt_token = authorization.replace("Bearer ", "")
+        elif token:
+            jwt_token = token
+            
+        if not jwt_token:
+            raise HTTPException(status_code=401, detail="請先登入")
+            
         supabase = get_supabase()
         repo = UserRepository(supabase)
         
         # 取得 Supabase Auth 使用者 (這步通常會解析 JWT，速度較快)
-        response = supabase.auth.get_user(token)
+        response = supabase.auth.get_user(jwt_token)
         if not response.user:
             raise HTTPException(status_code=401, detail="請先登入")
         

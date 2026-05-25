@@ -2,7 +2,8 @@ import logging
 import uuid
 import hashlib
 import json
-from fastapi import APIRouter, Depends, Response, BackgroundTasks, HTTPException
+from fastapi import APIRouter, Depends, Response, BackgroundTasks, HTTPException, Query
+from typing import Optional
 from models.schemas import (
     AnalyticsRequest,
     AggregatedStats,
@@ -21,6 +22,7 @@ from services.export_service import ExportService
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/analytics", tags=["Sales Analytics"])
+
 
 @router.post("/aggregate", response_model=AggregatedStats)
 async def aggregate_analytics(
@@ -135,6 +137,66 @@ async def export_excel(
     - 內部進行嚴格角色防禦，若是 Viewer 角色則攔截並拋出 403。
     """
     excel_data = await ExportService.generate_excel(req.model_dump(), user)
+    return Response(
+        content=excel_data,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={
+            "Content-Disposition": "attachment; filename=sales_report.xlsx",
+            "Access-Control-Expose-Headers": "Content-Disposition"
+        }
+    )
+
+@router.get("/export-pdf-direct")
+async def export_pdf_direct(
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    customer_id: Optional[str] = Query(None),
+    product_id: Optional[str] = Query(None),
+    token: Optional[str] = Query(None),
+    user: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("ANALYTICS_VIEW"))
+):
+    """
+    原生的 GET 匯出銷售分析 PDF 報告。
+    使用 window.location.href 觸發，能 100% 規避瀏覽器「自動下載」攔截機制。
+    """
+    filters = {
+        "date_from": date_from,
+        "date_to": date_to,
+        "customer_id": customer_id,
+        "product_id": product_id
+    }
+    pdf_data = await ExportService.generate_pdf(filters, user)
+    return Response(
+        content=pdf_data,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": "attachment; filename=sales_report.pdf",
+            "Access-Control-Expose-Headers": "Content-Disposition"
+        }
+    )
+
+@router.get("/export-excel-direct")
+async def export_excel_direct(
+    date_from: Optional[str] = Query(None),
+    date_to: Optional[str] = Query(None),
+    customer_id: Optional[str] = Query(None),
+    product_id: Optional[str] = Query(None),
+    token: Optional[str] = Query(None),
+    user: dict = Depends(get_current_user),
+    _: dict = Depends(require_permission("ANALYTICS_VIEW"))
+):
+    """
+    原生的 GET 匯出銷售數據 Excel 報告。
+    使用 window.location.href 觸發，能 100% 規避瀏覽器「自動下載」攔截機制。
+    """
+    filters = {
+        "date_from": date_from,
+        "date_to": date_to,
+        "customer_id": customer_id,
+        "product_id": product_id
+    }
+    excel_data = await ExportService.generate_excel(filters, user)
     return Response(
         content=excel_data,
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

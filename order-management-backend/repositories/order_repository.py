@@ -35,9 +35,9 @@ class OrderRepository(BaseRepository):
         if owner_id:
             query = query.eq("owner_id", owner_id)
         if date_from:
-            query = query.gte("created_at", f"{date_from}T00:00:00")
+            query = query.gte("updated_at", f"{date_from}T00:00:00")
         if date_to:
-            query = query.lte("created_at", f"{date_to}T23:59:59.999")
+            query = query.lte("updated_at", f"{date_to}T23:59:59.999")
         if customer_id:
             query = query.eq("customer", customer_id)
         if product_id:

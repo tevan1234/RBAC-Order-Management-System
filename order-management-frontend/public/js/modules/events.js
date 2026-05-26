@@ -1,8 +1,8 @@
 // events.js — 全域事件監聽與綁定中心
 
 import { f, getF } from '../utils.js?v=1.0.1';
-import { logout } from '../auth.js';
-import { getOrderSearch, getCachedCustomers, getCachedProducts } from './state.js';
+import { logout, getCurrentUser } from '../auth.js';
+import { getOrderSearch, getCachedCustomers, getCachedProducts, getCachedOrders } from './state.js';
 import { navigateTo } from './navigation.js';
 import { loadDashboardAiWidget } from './ai-widget.js';
 
@@ -35,8 +35,52 @@ export function bindGlobalEvents(onRefresh) {
     const cachedCustomers = getCachedCustomers();
     const cachedProducts = getCachedProducts();
 
+    // 1. 推算當前可見之篩選後的訂單列表 (包含 sales 角色與 keyword 搜尋過濾，排除日期過濾以求推算基準一致)
+    const currentUser = getCurrentUser();
+    let visibleOrders = getCachedOrders();
+    if (currentUser && currentUser.role === 'sales') {
+      const uid = currentUser.employeeId || currentUser.employee_id;
+      visibleOrders = visibleOrders.filter(o => getF(o, 'owner_id', 'ownerId') === uid);
+    }
+
+    const toSnake = str => str.replace(/([A-Z])/g, "_$1").toLowerCase();
+    let filteredOrders = visibleOrders;
+
+    if (orderSearch.keyword) {
+      const kw = orderSearch.keyword.toLowerCase().trim();
+      filteredOrders = filteredOrders.filter(o => {
+        let v = '';
+        if (orderSearch.field === 'ownerName') {
+          v = getF(o, 'owner_id', 'ownerId') || '';
+        } else if (orderSearch.field === 'customer') {
+          const custId = getF(o, 'customer_id', 'customerId', 'customer');
+          const cust = cachedCustomers.find(c => getF(c, 'customer_id', 'customerId') === custId);
+          v = cust ? `${cust.name || cust.customer_name} ${custId}` : custId;
+        } else if (orderSearch.field === 'product') {
+          const prodId = getF(o, 'product_id', 'productId');
+          const prod = cachedProducts.find(p => getF(p, 'product_id', 'productId') === prodId);
+          v = prod?.name || getF(o, 'product_name') || '未知商品';
+        } else {
+          v = String(getF(o, orderSearch.field, toSnake(orderSearch.field) || ''));
+        }
+        return v.toLowerCase().includes(kw);
+      });
+    }
+
+    // 2. 判斷篩選後的訂單中是否包含「狀態為已完成且最後更新日是今天」的訂單
+    const todayStr = new Date().toISOString().split('T')[0];
+    const hasTodayCompletedOrder = filteredOrders.some(o => {
+      const isDone = o.status === '已完成';
+      const updatedAt = getF(o, 'updated_at', 'updatedAt') || '';
+      const updatedDateStr = updatedAt.split('T')[0];
+      return isDone && updatedDateStr === todayStr;
+    });
+
+    // 3. 根據上述條件動態決定 Fallback：若今天有完成訂單，則 Fallback 為今天；否則 Fallback 為昨天
+    const fallbackDateTo = hasTodayCompletedOrder ? todayStr : (window.getTodayDate ? window.getTodayDate() : '');
+    
     const dateFrom = orderSearch.dateFrom || (window.getDate30DaysAgo ? window.getDate30DaysAgo() : '');
-    const dateTo = orderSearch.dateTo || (window.getTodayDate ? window.getTodayDate() : '');
+    const dateTo = orderSearch.dateTo || fallbackDateTo;
 
     let customerId = null;
     let productId = null;
@@ -58,6 +102,8 @@ export function bindGlobalEvents(onRefresh) {
       }
     }
 
+    // 防禦性同步網址 Hash，確保切換與資料更新安全無虞
+    window.location.hash = 'analytics';
     await navigateTo('analytics', { dateFrom, dateTo, customerId, productId });
   });
 

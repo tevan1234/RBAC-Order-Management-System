@@ -309,14 +309,18 @@ export function initDropdown(dropdownId, onChange, enableSearch = false) {
     menu.prepend(searchWrapper);
 
     const searchInput = searchWrapper.querySelector('.dropdown-search-input');
+    let _searchDebounceTimer = null;
     searchInput.addEventListener('input', (e) => {
-      const kw = e.target.value.toLowerCase();
-      menu.querySelectorAll('.dropdown-item').forEach(item => {
-        const text = item.textContent.toLowerCase();
-        const val = (item.dataset.value || '').toLowerCase();
-        const isMatch = text.includes(kw) || val.includes(kw);
-        item.classList.toggle('hidden', !isMatch);
-      });
+      clearTimeout(_searchDebounceTimer);
+      _searchDebounceTimer = setTimeout(() => {
+        const kw = e.target.value.toLowerCase();
+        menu.querySelectorAll('.dropdown-item').forEach(item => {
+          const text = item.textContent.toLowerCase();
+          const val = (item.dataset.value || '').toLowerCase();
+          const isMatch = text.includes(kw) || val.includes(kw);
+          item.classList.toggle('hidden', !isMatch);
+        });
+      }, 150); // 150ms debounce 防抖，大量選項時避免高頻 DOM 操作
     });
 
     searchInput.addEventListener('click', (e) => e.stopPropagation());

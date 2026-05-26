@@ -90,7 +90,7 @@ class AnalyticsService:
             amount = float(order.get("amount") or 0.0)
             status = order.get("status") or "未知狀態"
             p_id = order.get("product_id") or "未知商品ID"
-            created_at_str = order.get("created_at")
+            updated_at_str = order.get("updated_at") or order.get("created_at")
 
             # 按狀態分組
             status_stats[status] = status_stats.get(status, 0) + 1
@@ -107,10 +107,10 @@ class AnalyticsService:
                 product_agg[p_id]["total_amount"] += amount
 
                 # 按時間序列分組 (YYYY-MM-DD)
-                if created_at_str:
+                if updated_at_str:
                     try:
                         # 統一將 Z 字尾或空格格式化為標準 ISO 格式以利 fromisoformat 解析
-                        clean_str = created_at_str.replace("Z", "+00:00")
+                        clean_str = updated_at_str.replace("Z", "+00:00")
                         if " " in clean_str:
                             clean_str = clean_str.replace(" ", "T")
                         

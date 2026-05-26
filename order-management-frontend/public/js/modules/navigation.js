@@ -33,6 +33,9 @@ export async function navigateTo(section, filters = null) {
     window.isAnalyticsLoading = false; // 確定離開則重置狀態
   }
 
+  // 同步網址 Hash，確保資料更新 (onRefresh) 時能抓到正確的當前區段
+  window.location.hash = section;
+
   // 切換 DOM 區段可見性
   document.querySelectorAll('.section-content').forEach(s => s.classList.remove('active'));
   document.getElementById('section-' + section)?.classList.add('active');
@@ -103,6 +106,9 @@ export async function navigateTo(section, filters = null) {
     'change-password': renderAccountSettings,
     analytics: async () => {
       if (!window.analyticsModuleLoaded) {
+        // 在 import 期間先顯示骨架屏，消除首次載入的空白閃爍感
+        const analyticsLoading = document.getElementById('analyticsLoading');
+        if (analyticsLoading) analyticsLoading.style.display = 'block';
         await import('../analytics-module.js');
         window.analyticsModuleLoaded = true;
       }

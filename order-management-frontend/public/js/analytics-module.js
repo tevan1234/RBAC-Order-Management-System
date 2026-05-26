@@ -4,15 +4,29 @@ import { getCurrentUser, getToken } from './auth.js';
 
 let isEventsBound = false;
 
-export function getDate30DaysAgo() {
+/**
+ * 取得「昨天」的日期（分析結束日）
+ * 例如今天 5/2 → 回傳 5/1
+ */
+export function getYesterdayDate() {
   const d = new Date();
-  d.setDate(d.getDate() - 30);
+  d.setDate(d.getDate() - 1);
   return d.toISOString().split('T')[0];
 }
 
-export function getTodayDate() {
-  return new Date().toISOString().split('T')[0];
+/**
+ * 取得「昨天往前 30 天」的日期（分析起始日）
+ * 例如昨天 5/1 → 回傳 4/1
+ */
+export function getDateStartOfRange() {
+  const d = new Date();
+  d.setDate(d.getDate() - 31); // 昨天 -30 天 = 今天 -31 天
+  return d.toISOString().split('T')[0];
 }
+
+// 向後相容別名（保留舊函式名稱，避免其他可能的引用失效）
+export const getDate30DaysAgo = getDateStartOfRange;
+export const getTodayDate = getYesterdayDate;
 
 export async function renderAnalyticsSection(filters = {}) {
   // 綁定事件監聽器 (僅在首次載入時綁定)
@@ -30,9 +44,9 @@ export async function renderAnalyticsSection(filters = {}) {
     }
   }
   
-  // 預設 30 天
-  const dateFrom = filters.dateFrom || getDate30DaysAgo();
-  const dateTo = filters.dateTo || getTodayDate();
+  // 預設為「昨天 ~ 31 天前」（即完整的前一個月），避免今天資料不完整影響分析
+  const dateFrom = filters.dateFrom || getDateStartOfRange();
+  const dateTo = filters.dateTo || getYesterdayDate();
   const customerId = filters.customerId || null;
   const productId = filters.productId || null;
   
@@ -96,39 +110,45 @@ async function generateReport(dateFrom, dateTo, customerId = null, productId = n
       }
     );
     
-    const taskId = taskInit.task_id;
-    if (!taskId) {
-      throw new Error('未取得任務 ID');
-    }
-    
-    // 2. 輪詢機制 (每 3 秒檢查一次)
     let reportResult = null;
-    let attempts = 0;
-    const maxAttempts = 40; // 最多輪詢 2 分鐘 (40 * 3 秒)
     
-    while (window.isAnalyticsLoading && attempts < maxAttempts) {
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      attempts++;
-      
-      // 若在等待期間使用者切換了頁面，則中斷
-      if (!window.isAnalyticsLoading) {
-        break;
+    if (taskInit.status === 'success') {
+      // ⚡ 快取命中：直接採用既有分析報告結果進行渲染，無需任何輪詢等待與 Skeleton skeleton 動畫！
+      reportResult = taskInit;
+    } else {
+      const taskId = taskInit.task_id;
+      if (!taskId) {
+        throw new Error('未取得任務 ID');
       }
       
-      const taskStatus = await apiRequest(`/analytics/task-status/${taskId}`);
+      // 2. 輪詢機制 (每 3 秒檢查一次)
+      let attempts = 0;
+      const maxAttempts = 40; // 最多輪詢 2 分鐘 (40 * 3 秒)
       
-      if (taskStatus.status === 'success') {
-        reportResult = taskStatus;
-        break;
-      } else if (taskStatus.status === 'failed') {
-        throw new Error('AI 思考太用力了，請稍後再試。');
-      }
-      
-      // 更新 loading 文字以示狀態進展
-      const loadingTextEl = container?.querySelector('p');
-      if (loadingTextEl) {
-        if (taskStatus.status === 'processing') {
-          loadingTextEl.textContent = '🤖 AI 正在努力分析並生成完美洞察，請耐心等候...';
+      while (window.isAnalyticsLoading && attempts < maxAttempts) {
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        attempts++;
+        
+        // 若在等待期間使用者切換了頁面，則中斷
+        if (!window.isAnalyticsLoading) {
+          break;
+        }
+        
+        const taskStatus = await apiRequest(`/analytics/task-status/${taskId}`);
+        
+        if (taskStatus.status === 'success') {
+          reportResult = taskStatus;
+          break;
+        } else if (taskStatus.status === 'failed') {
+          throw new Error('AI 思考太用力了，請稍後再試。');
+        }
+        
+        // 更新 loading 文字以示狀態進展
+        const loadingTextEl = container?.querySelector('p');
+        if (loadingTextEl) {
+          if (taskStatus.status === 'processing') {
+            loadingTextEl.textContent = '🤖 AI 正在努力分析並生成完美洞察，請耐心等候...';
+          }
         }
       }
     }
@@ -269,7 +289,11 @@ async function handleDownload(endpoint, defaultFilename) {
     // 這將被瀏覽器安全防禦機制視為使用者主動發起的原生下載，100% 避開「自動下載」攔截政策！
     window.location.href = downloadUrl;
 
-    showNotification('檔案下載成功！', 'success');
+    // window.location.href 是非阻塞的瀏覽器原生下載，無法偵測「真正完成」事件。
+    // 延遲 1.5 秒後顯示「已啟動」通知，避免與「準備中」通知同時出現造成混淆。
+    setTimeout(() => {
+      showNotification('下載已啟動！請至瀏覽器下載列確認。', 'success');
+    }, 1500);
   } catch (error) {
     console.error('Download error:', error);
     showNotification(`下載失敗: ${error.message}`, 'error');
@@ -519,5 +543,7 @@ function bindAnalyticsEvents() {
 
 // 掛載至全域，方便 dynamic import 載入後，隨處皆可透過 window 呼叫
 window.renderAnalyticsSection = renderAnalyticsSection;
-window.getDate30DaysAgo = getDate30DaysAgo;
-window.getTodayDate = getTodayDate;
+window.getDate30DaysAgo = getDateStartOfRange;    // 向後相容別名
+window.getTodayDate = getYesterdayDate;            // 向後相容別名
+window.getDateStartOfRange = getDateStartOfRange;
+window.getYesterdayDate = getYesterdayDate;

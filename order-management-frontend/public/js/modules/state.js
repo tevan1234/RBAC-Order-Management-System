@@ -16,7 +16,7 @@ let logsPage = 1;
 let productsPage = 1;
 
 // ── 搜尋參數 ──
-let orderSearch = { keyword: '', field: 'id', dateFrom: '', dateTo: '', dateField: 'created_at' };
+let orderSearch = { keyword: '', field: 'id', dateFrom: '', dateTo: '', dateField: 'updated_at' };
 let customerSearch = { keyword: '', field: 'customerId' };
 let productSearch = { keyword: '', field: 'name' };
 let userSearch = { keyword: '', field: 'employeeId' };
@@ -59,3 +59,22 @@ export const setCustomerSearch = (params) => { customerSearch = { ...customerSea
 export const setProductSearch = (params) => { productSearch = { ...productSearch, ...params }; };
 export const setUserSearch = (params) => { userSearch = { ...userSearch, ...params }; };
 export const setAuditSearch = (params) => { auditSearch = { ...auditSearch, ...params }; };
+
+// ── 全域狀態完整清理（登出時呼叫，防止跨使用者資料洩漏） ──
+export function clearAllState() {
+  cachedOrders = [];
+  cachedCustomers = [];
+  cachedProducts = [];
+  cachedUsers = [];
+  cachedLogs = [];
+  ordersPage = 1;
+  customersPage = 1;
+  usersPage = 1;
+  logsPage = 1;
+  productsPage = 1;
+  orderSearch = { keyword: '', field: 'id', dateFrom: '', dateTo: '', dateField: 'updated_at' };
+  customerSearch = { keyword: '', field: 'customerId' };
+  productSearch = { keyword: '', field: 'name' };
+  userSearch = { keyword: '', field: 'employeeId' };
+  auditSearch = { keyword: '', field: 'action', dateFrom: '', dateTo: '' };
+}

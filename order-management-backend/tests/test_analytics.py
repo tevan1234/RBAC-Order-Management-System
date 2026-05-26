@@ -16,9 +16,9 @@ MOCK_PRODUCTS = [
 
 # 模擬所有訂單資料 (混合多個 Sales 負責的訂單)
 MOCK_ORDERS = [
-    {"id": "ORD1", "customer": "C1", "product_id": "P1", "amount": 1200.0, "status": "已完成", "owner_id": "EMP_SALES_1", "created_at": "2026-01-05T12:00:00Z"},
-    {"id": "ORD2", "customer": "C2", "product_id": "P2", "amount": 8500.0, "status": "處理中", "owner_id": "EMP_SALES_2", "created_at": "2026-01-06T15:30:00Z"},
-    {"id": "ORD3", "customer": "C3", "product_id": "P1", "amount": 1200.0, "status": "已完成", "owner_id": "EMP_SALES_1", "created_at": "2026-01-06T09:00:00Z"},
+    {"id": "ORD1", "customer": "C1", "product_id": "P1", "amount": 1200.0, "status": "已完成", "owner_id": "EMP_SALES_1", "created_at": "2026-01-05T12:00:00Z", "updated_at": "2026-01-05T12:00:00Z"},
+    {"id": "ORD2", "customer": "C2", "product_id": "P2", "amount": 8500.0, "status": "處理中", "owner_id": "EMP_SALES_2", "created_at": "2026-01-06T15:30:00Z", "updated_at": "2026-01-06T15:30:00Z"},
+    {"id": "ORD3", "customer": "C3", "product_id": "P1", "amount": 1200.0, "status": "已完成", "owner_id": "EMP_SALES_1", "created_at": "2026-01-06T09:00:00Z", "updated_at": "2026-01-06T09:00:00Z"},
 ]
 
 class MockReportHistoryRepo:
@@ -661,5 +661,84 @@ async def test_export_excel_forbidden_viewer(ac: AsyncClient):
 
     finally:
         app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_analytics_date_dependency_updated_at(ac: AsyncClient):
+    """
+    測試銷售分析 X 軸日期依賴修正：
+    - 驗證營收時間分組 (time_series) 是依賴於 updated_at (已完成時間) 而非 created_at (建立時間)。
+    - ORD_DEP_1: 建立於 4/15，完成於 5/10。營收 3000 元應統計在 5/10。
+    - ORD_DEP_2: 建立於 5/18，完成於 6/01。營收 5000 元應統計在 6/01。
+    """
+    admin_user = {
+        "id": "uuid-admin",
+        "email": "admin@test.com",
+        "profile": {
+            "id": "uuid-admin",
+            "employee_id": "EMP_ADMIN",
+            "name": "Admin User",
+            "role": "admin",
+            "status": "active"
+        }
+    }
+
+    from services.auth_service import get_current_user
+    app.dependency_overrides[get_current_user] = lambda: admin_user
+
+    MOCK_DEP_ORDERS = [
+        {"id": "ORD_DEP_1", "customer": "C1", "product_id": "P1", "amount": 3000.0, "status": "已完成", "owner_id": "EMP_ADMIN", "created_at": "2026-04-15T12:00:00Z", "updated_at": "2026-05-10T15:00:00Z"},
+        {"id": "ORD_DEP_2", "customer": "C2", "product_id": "P2", "amount": 5000.0, "status": "已完成", "owner_id": "EMP_ADMIN", "created_at": "2026-05-18T10:00:00Z", "updated_at": "2026-06-01T09:30:00Z"},
+    ]
+
+    try:
+        with patch("services.analytics_service.OrderRepository") as mock_order_repo_class, \
+             patch("services.analytics_service.ProductRepository") as mock_prod_repo_class:
+            
+            mock_order_repo = MagicMock()
+            mock_order_repo.get_orders_for_analytics.return_value = MOCK_DEP_ORDERS
+            mock_order_repo_class.return_value = mock_order_repo
+
+            mock_prod_repo = MagicMock()
+            mock_prod_repo.get_all_products.return_value = MOCK_PRODUCTS
+            mock_prod_repo_class.return_value = mock_prod_repo
+
+            payload = {
+                "date_from": "2026-05-01",
+                "date_to": "2026-05-31",
+                "customer_id": None,
+                "product_id": None
+            }
+
+            headers = {"Authorization": "Bearer fake-admin-token"}
+            response = await ac.post("/api/analytics/aggregate", json=payload, headers=headers)
+
+            assert response.status_code == 200
+            data = response.json()
+
+            # 驗證資料庫查詢參數是否正確以 updated_at 作為篩選標準
+            mock_order_repo.get_orders_for_analytics.assert_called_once_with(
+                owner_id=None,
+                date_from="2026-05-01",
+                date_to="2026-05-31",
+                customer_id=None,
+                product_id=None
+            )
+
+            # 驗證營收是否被正確分組在 updated_at 的台灣時間日期 (注意 Z 是 UTC 時間，+8小時轉換)
+            # ORD_DEP_1: 5-10T15:00:00Z -> 台灣時間 5-10T23:00:00，日期為 2026-05-10
+            # ORD_DEP_2: 6-01T09:30:00Z -> 台灣時間 6-01T17:30:00，日期為 2026-06-01
+            assert "2026-05-10" in data["time_series"]
+            assert "2026-06-01" in data["time_series"]
+            
+            assert data["time_series"]["2026-05-10"] == 3000.0
+            assert data["time_series"]["2026-06-01"] == 5000.0
+
+            # 驗證總營收是兩筆訂單的累加
+            assert data["total_amount"] == 8000.0
+
+    finally:
+        app.dependency_overrides.clear()
+
 
 

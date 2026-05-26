@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/style.css?v=1.0.1">
 
     <!-- React & ReactDOM v18 -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
@@ -154,14 +154,14 @@
                     </div>
 
                     <div class="search-bar search-bar-date">
-                        <div class="custom-dropdown" id="orderDateFieldDropdown" data-value="created_at">
+                        <div class="custom-dropdown" id="orderDateFieldDropdown" data-value="updated_at">
                             <button class="dropdown-trigger" type="button">
-                                <span class="dropdown-selected">建立時間</span>
+                                <span class="dropdown-selected">最後更新</span>
                                 <span class="dropdown-arrow">▾</span>
                             </button>
                             <ul class="dropdown-menu">
-                                <li class="dropdown-item active" data-value="created_at">建立時間</li>
-                                <li class="dropdown-item" data-value="updated_at">最後更新</li>
+                                <li class="dropdown-item" data-value="created_at">建立時間</li>
+                                <li class="dropdown-item active" data-value="updated_at">最後更新</li>
                             </ul>
                         </div>
                         <input class="search-input-date" id="orderDateFrom" type="date">

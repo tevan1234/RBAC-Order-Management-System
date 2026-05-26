@@ -3,6 +3,7 @@
 // ============================================================
 
 import { apiRequest } from './utils.js';
+import { clearAllState } from './modules/state.js';
 
 // 記憶體私有儲存變數 (Memory Storage)
 let _token = null;
@@ -222,6 +223,8 @@ export async function updateEmail(newEmail) {
  * 登出
  */
 export function logout() {
+  // 登出前先清除所有 ES Module 層級的快取狀態，防止跨使用者資料洩漏
+  clearAllState();
   _token = null;
   _currentUser = null;
   if (_expiryTimer) clearTimeout(_expiryTimer);

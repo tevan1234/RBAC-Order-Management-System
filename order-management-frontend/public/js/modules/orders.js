@@ -378,6 +378,18 @@ async function saveOrder() {
 
   try {
     if (id) {
+      // 作廢操作需要二次確認，防止在編輯 Modal 中誤操作
+      if (status === '已作廢') {
+        const confirmed = await showConfirm(
+          '將訂單狀態變更為「已作廢」後，此訂單將無法再編輯，確定要繼續嗎？',
+          '⚠️ 確認作廢訂單'
+        );
+        if (!confirmed) {
+          btn.disabled = false;
+          btn.textContent = originalText;
+          return;
+        }
+      }
       await updateOrder(id, { customer: customerId, product_id: productId, amount, status });
       f('orderModal')?.classList.remove('active');
       showNotification('訂單更新成功', 'success');
@@ -457,6 +469,8 @@ export function bindOrdersEvents(onRefresh) {
     setOrderSearch({ dateField: v }); 
     renderOrdersList(); 
   });
+  // 初始化時預設選擇最後更新時間，以利完成日基準之銷售統計
+  setDropdownValue('orderDateFieldDropdown', 'updated_at');
   
   f('orderDateFrom')?.addEventListener('change', e => { 
     setOrderSearch({ dateFrom: e.target.value }); 
@@ -474,8 +488,8 @@ export function bindOrdersEvents(onRefresh) {
   f('orderDateReset')?.addEventListener('click', () => {
     if (f('orderDateFrom')) f('orderDateFrom').value = ''; 
     if (f('orderDateTo')) f('orderDateTo').value = '';
-    setOrderSearch({ dateFrom: '', dateTo: '', dateField: 'created_at' });
-    setDropdownValue('orderDateFieldDropdown', 'created_at');
+    setOrderSearch({ dateFrom: '', dateTo: '', dateField: 'updated_at' });
+    setDropdownValue('orderDateFieldDropdown', 'updated_at');
     renderOrdersList();
   });
 }

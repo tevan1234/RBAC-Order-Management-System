@@ -8,13 +8,13 @@ _supabase_client: Client = None
 _supabase_admin_client: Client = None
 
 def get_supabase() -> Client:
-    """回傳一般用途的 Supabase 客戶端 (使用 anon key)"""
+    """回傳一般用途的 Supabase 客戶端 (改為使用 SUPABASE_SERVICE_ROLE_KEY)"""
     global _supabase_client
     if _supabase_client is None:
         url = os.getenv("SUPABASE_URL")
-        key = os.getenv("SUPABASE_KEY")
+        key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
         if not url or not key:
-            raise ValueError("SUPABASE_URL and SUPABASE_KEY must be set")
+            raise ValueError("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set")
         _supabase_client = create_client(url, key)
     return _supabase_client
 

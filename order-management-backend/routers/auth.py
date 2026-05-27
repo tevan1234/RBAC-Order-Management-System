@@ -1,40 +1,11 @@
 from fastapi import APIRouter, HTTPException, Depends, Request, Response
-from models.schemas import RegisterRequest, LoginRequest, PasswordChangeRequest, EmailUpdateRequest
+from models.schemas import LoginRequest, PasswordChangeRequest, EmailUpdateRequest
 from services.supabase_client import get_supabase
 from services.auth_service import get_current_user, AuthService
 from services.audit_service import log_action
-from services.rate_limiter import limiter, LIMIT_LOGIN, LIMIT_REGISTER, LIMIT_CHANGE_PASSWORD
+from services.rate_limiter import limiter, LIMIT_LOGIN, LIMIT_CHANGE_PASSWORD
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
-
-@router.post("/register")
-@limiter.limit(LIMIT_REGISTER)
-async def register(request: Request, response: Response, req: RegisterRequest):
-    """註冊新使用者，並透過 Trigger 自動建立 Profile"""
-    supabase = get_supabase()
-    try:
-        # 呼叫 supabase.auth.sign_up
-        # 注意：要在 options 中傳遞 data，以便資料庫 Trigger 捕捉
-        res = supabase.auth.sign_up({
-            "email": req.email,
-            "password": req.password,
-            "options": {
-                "data": {
-                    "name": req.name,
-                    "employee_id": req.employee_id,
-                    "role": req.role
-                }
-            }
-        })
-        
-        if not res.user:
-            raise HTTPException(status_code=400, detail="註冊失敗")
-            
-        await log_action(req.employee_id, "REGISTER", f"User registered: {req.email}")
-        
-        return {"user": res.user, "session": res.session}
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
 
 @router.post("/login")
 @limiter.limit(LIMIT_LOGIN)

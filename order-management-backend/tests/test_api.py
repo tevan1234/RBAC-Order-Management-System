@@ -216,3 +216,17 @@ async def test_audit_logs_forbidden_for_non_admin(ac: AsyncClient):
             }
         }
 
+
+@pytest.mark.asyncio
+async def test_register_endpoint_removed(ac: AsyncClient):
+    """測試自主註冊端點是否已被完全移除並回傳 404"""
+    register_data = {
+        "email": "test_register@test.com",
+        "password": "Password123",
+        "name": "Test Register",
+        "employee_id": "EMP8888"
+    }
+    response = await ac.post("/api/auth/register", json=register_data)
+    assert response.status_code == 404
+
+

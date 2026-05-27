@@ -11,8 +11,6 @@ limiter = Limiter(
 # 從環境變數讀取限流配置值，若無則使用安全之預設值
 # 預設值：
 # - 登入：5 次 / 分鐘
-# - 註冊：3 次 / 小時
 # - 修改密碼：3 次 / 小時
 LIMIT_LOGIN = os.getenv("LIMIT_LOGIN", "5/minute")
-LIMIT_REGISTER = os.getenv("LIMIT_REGISTER", "3/hour")
 LIMIT_CHANGE_PASSWORD = os.getenv("LIMIT_CHANGE_PASSWORD", "3/hour")

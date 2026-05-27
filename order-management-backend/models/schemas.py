@@ -4,33 +4,6 @@ from datetime import datetime
 from uuid import UUID
 import re
 
-class RegisterRequest(BaseModel):
-    email: EmailStr = Field(..., description="電子郵件信箱，必須符合標準格式")
-    password: str = Field(..., description="密碼，最少 8 個字元，且必須包含大小寫字母與數字")
-    name: str = Field(..., min_length=2, max_length=50, description="使用者姓名，2-50 個字元")
-    employee_id: str = Field(..., description="員工編號，格式必須為 EMP 後接至少四位數字（例如：EMP0001）")
-    role: Optional[str] = Field("viewer", description="使用者角色，選填，預設為 viewer")
-
-    @field_validator("password")
-    @classmethod
-    def validate_password(cls, v: str) -> str:
-        if len(v) < 8:
-            raise ValueError("密碼長度必須至少為 8 個字元")
-        if not any(c.isupper() for c in v):
-            raise ValueError("密碼必須包含至少一個大寫字母")
-        if not any(c.islower() for c in v):
-            raise ValueError("密碼必須包含至少一個小寫字母")
-        if not any(c.isdigit() for c in v):
-            raise ValueError("密碼必須包含至少一個數字")
-        return v
-
-    @field_validator("employee_id")
-    @classmethod
-    def validate_employee_id(cls, v: str) -> str:
-        if not re.match(r"^EMP\d{4,}$", v):
-            raise ValueError("員工編號格式不正確，必須以 'EMP' 開頭，後接至少 4 位數字（例如：EMP0001）")
-        return v
-
 class LoginRequest(BaseModel):
     employee_id: str = Field(..., description="員工編號，格式必須為 EMP 後接至少四位數字")
     password: str = Field(..., description="密碼，不可為空")

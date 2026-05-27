@@ -1,5 +1,5 @@
 // analytics-module.js - 獨立模組避免 dashboard.js 過大
-import { apiRequest, escapeHtml, showNotification } from './utils.js?v=1.0.1';
+import { apiRequest, escapeHtml, showNotification, API_BASE } from './utils.js?v=1.0.1';
 import { getCurrentUser, getToken } from './auth.js';
 
 let isEventsBound = false;
@@ -281,7 +281,7 @@ async function handleDownload(endpoint, defaultFilename) {
     if (productId) queryParams.append('product_id', productId);
     if (token) queryParams.append('token', token);
 
-    const downloadUrl = `http://localhost:8000/api${directEndpoint}?${queryParams.toString()}`;
+    const downloadUrl = `${API_BASE}${directEndpoint}?${queryParams.toString()}`;
     
     console.log(`[下載偵錯] 觸發原生 GET 導航下載。連結: ${downloadUrl}`);
     

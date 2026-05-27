@@ -4,7 +4,7 @@
 
 import { getToken, logout } from './auth.js';
 
-const API_BASE = 'http://localhost:8000/api';
+export const API_BASE = window.ENV?.API_BASE || 'http://localhost:8000/api';
 
 // ============================================================
 // API 請求核心

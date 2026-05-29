@@ -26,20 +26,65 @@ from repositories import OrderRepository, ProductRepository
 logger = logging.getLogger(__name__)
 
 # ==========================================
-# 1. 繁體中文字體相容防禦 (Windows 優先)
+# 1. 繁體中文字體相容防禦 (跨平台 CJK 支援與動態下載)
 # ==========================================
 FONT_NAME = "Helvetica"
 FONT_BOLD_NAME = "Helvetica-Bold"
 FONT_FOUND = False
 
-# Windows 繁體中文微軟正黑體常規字體與粗體字體
-win_font_paths = [
+# 取得專案根目錄與本地字體快取路徑
+base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+local_font_dir = os.path.join(base_dir, "static", "fonts")
+local_font_path = os.path.join(local_font_dir, "NotoSansTC-Regular.ttf")
+
+# 跨平台字體候選路徑 (Windows, Linux 系統字體, 以及本地端備用字體)
+font_paths = [
+    # 1. Windows 繁體中文微軟正黑體
     ("MSJH", "C:\\Windows\\Fonts\\msjh.ttc"),
     ("MSJH", "C:\\Windows\\Fonts\\msjh.ttf"),
     ("MSJH", "C:\\Windows\\Fonts\\Microsoft\\msjh.ttc"),
+    
+    # 2. Linux (Render) 內建 Noto CJK / 儷黑體等繁體中文字體
+    ("NotoSansCJK", "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc"),
+    ("NotoSansCJK", "/usr/share/fonts/noto-cjk/NotoSansCJKtc-Regular.otf"),
+    ("NotoSansCJK", "/usr/share/fonts/truetype/noto-cjk/NotoSansCJKtc-Regular.otf"),
+    ("NotoSansCJK", "/usr/share/fonts/opentype/noto/NotoSansCJK-Bold.ttc"),
+    ("WenQuanYi", "/usr/share/fonts/truetype/wqy/wqy-microhei.ttc"),
+    
+    # 3. 本地端 / 運行期動態下載備用字體 (堅不可摧的終極防禦)
+    ("NotoSansTC", local_font_path),
 ]
 
-for name, path in win_font_paths:
+def check_and_download_backup_font():
+    """檢查是否有任何系統內建中文字體存在，若無，且本地亦無備用字體，則自動進行動態下載防禦"""
+    system_font_found = False
+    for _, path in font_paths[:-1]:  # 排除最後一個本地路徑
+        if os.path.exists(path):
+            system_font_found = True
+            break
+            
+    if not system_font_found and not os.path.exists(local_font_path):
+        try:
+            logger.info("檢測到目前環境中缺乏中文字體，啟動 NotoSansTC 備援字體自動下載程序...")
+            os.makedirs(local_font_dir, exist_ok=True)
+            url = "https://github.com/google/fonts/raw/main/ofl/notosanstc/static/NotoSansTC-Regular.ttf"
+            
+            import urllib.request
+            req = urllib.request.Request(
+                url, 
+                headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+            )
+            with urllib.request.urlopen(req, timeout=20) as response, open(local_font_path, 'wb') as out_file:
+                out_file.write(response.read())
+            logger.info("備援中文字體下載成功，已儲存至本地備用路徑。")
+        except Exception as e:
+            logger.warning(f"動態下載備用字體失敗: {str(e)}")
+
+# 執行字體下載防禦
+check_and_download_backup_font()
+
+# 開始註冊字體
+for name, path in font_paths:
     if os.path.exists(path):
         try:
             # 註冊 ReportLab 字體

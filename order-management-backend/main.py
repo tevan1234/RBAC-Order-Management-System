@@ -103,6 +103,50 @@ async def health_check():
     """健康檢查端點"""
     return {"status": "ok", "message": "API is running"}
 
+@app.get("/api/debug/fonts")
+async def debug_fonts():
+    import os
+    from services.export_service import FONT_NAME, FONT_BOLD_NAME, FONT_FOUND, font_paths, local_font_path
+    
+    font_status = []
+    for name, path in font_paths:
+        exists = os.path.exists(path)
+        size = os.path.getsize(path) if exists else 0
+        font_status.append({
+            "name": name,
+            "path": path,
+            "exists": exists,
+            "size_bytes": size
+        })
+        
+    usr_share_fonts = []
+    try:
+        if os.path.exists("/usr/share/fonts"):
+            for root, dirs, files in os.walk("/usr/share/fonts"):
+                for f in files:
+                    if f.endswith((".ttf", ".ttc", ".otf")):
+                        usr_share_fonts.append(os.path.join(root, f))
+                        if len(usr_share_fonts) > 15:
+                            break
+                if len(usr_share_fonts) > 15:
+                    break
+        else:
+            usr_share_fonts.append("/usr/share/fonts path does not exist")
+    except Exception as e:
+        usr_share_fonts.append(f"Error scanning: {str(e)}")
+
+    return {
+        "FONT_NAME": FONT_NAME,
+        "FONT_BOLD_NAME": FONT_BOLD_NAME,
+        "FONT_FOUND": FONT_FOUND,
+        "local_font_path": local_font_path,
+        "local_font_exists": os.path.exists(local_font_path),
+        "local_font_size": os.path.getsize(local_font_path) if os.path.exists(local_font_path) else 0,
+        "font_paths_status": font_status,
+        "usr_share_fonts_sample": usr_share_fonts
+    }
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+

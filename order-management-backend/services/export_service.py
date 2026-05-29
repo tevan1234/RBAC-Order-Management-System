@@ -70,39 +70,52 @@ def check_and_download_backup_font():
             url = "https://github.com/google/fonts/raw/main/ofl/notosanstc/static/NotoSansTC-Regular.ttf"
             
             import urllib.request
+            import ssl
+            # 建立一個不驗證 SSL 憑證的 Context，徹底防禦 Linux/Docker 環境下憑證缺失導致的 SSL 連線錯誤
+            context = ssl._create_unverified_context()
+            
             req = urllib.request.Request(
                 url, 
                 headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
             )
-            with urllib.request.urlopen(req, timeout=20) as response, open(local_font_path, 'wb') as out_file:
+            with urllib.request.urlopen(req, context=context, timeout=20) as response, open(local_font_path, 'wb') as out_file:
                 out_file.write(response.read())
             logger.info("備援中文字體下載成功，已儲存至本地備用路徑。")
         except Exception as e:
             logger.warning(f"動態下載備用字體失敗: {str(e)}")
 
-# 執行字體下載防禦
-check_and_download_backup_font()
+def ensure_font_registered():
+    """確保中文字體已正確載入 (可被重複呼叫，具備執行期自動防禦機制)"""
+    global FONT_NAME, FONT_BOLD_NAME, FONT_FOUND
+    if FONT_FOUND:
+        return
+        
+    # 執行字體下載防禦
+    check_and_download_backup_font()
+    
+    # 開始註冊字體
+    for name, path in font_paths:
+        if os.path.exists(path):
+            try:
+                # 註冊 ReportLab 字體
+                pdfmetrics.registerFont(TTFont(name, path))
+                FONT_NAME = name
+                FONT_BOLD_NAME = name
+                FONT_FOUND = True
+                logger.info(f"成功註冊 ReportLab 中文字體: {name} (路徑: {path})")
+                
+                # 註冊 Matplotlib 字體
+                font_manager.fontManager.addfont(path)
+                prop = font_manager.FontProperties(fname=path)
+                plt.rcParams['font.sans-serif'] = [prop.get_name()]
+                plt.rcParams['axes.unicode_minus'] = False  # 避免負號顯示為亂碼
+                logger.info(f"成功註冊 Matplotlib 中文字體: {prop.get_name()}")
+                break
+            except Exception as e:
+                logger.warning(f"註冊中文字體失敗 ({path}): {str(e)}")
 
-# 開始註冊字體
-for name, path in font_paths:
-    if os.path.exists(path):
-        try:
-            # 註冊 ReportLab 字體
-            pdfmetrics.registerFont(TTFont(name, path))
-            FONT_NAME = name
-            FONT_BOLD_NAME = name
-            FONT_FOUND = True
-            logger.info(f"成功註冊 ReportLab 中文字體: {name} (路徑: {path})")
-            
-            # 註冊 Matplotlib 字體
-            font_manager.fontManager.addfont(path)
-            prop = font_manager.FontProperties(fname=path)
-            plt.rcParams['font.sans-serif'] = [prop.get_name()]
-            plt.rcParams['axes.unicode_minus'] = False  # 避免負號顯示為亂碼
-            logger.info(f"成功註冊 Matplotlib 中文字體: {prop.get_name()}")
-            break
-        except Exception as e:
-            logger.warning(f"註冊中文字體失敗 ({path}): {str(e)}")
+# 啟動時進行第一次嘗試
+ensure_font_registered()
 
 # ==========================================
 # 2. 導出服務類別
@@ -119,6 +132,8 @@ class ExportService:
     @staticmethod
     async def generate_pdf(filters: dict, user: dict) -> bytes:
         filters = filters or {}
+        # 確保中文字體已載入 (防禦性雙重檢查)
+        ensure_font_registered()
         """
         生成結構化且精美的 PDF 銷售分析報告。
         - 內部調用 AnalyticsService 進行角色權限硬性隔離數據聚合。

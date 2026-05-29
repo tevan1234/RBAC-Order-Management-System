@@ -106,7 +106,16 @@ async def health_check():
 @app.get("/api/debug/fonts")
 async def debug_fonts():
     import os
-    from services.export_service import FONT_NAME, FONT_BOLD_NAME, FONT_FOUND, font_paths, local_font_path
+    # 主動在 API 呼叫時觸發註冊，以便於在瀏覽器重整時即時執行最新邏輯並排錯
+    from services.export_service import ensure_font_registered, FONT_NAME, FONT_BOLD_NAME, FONT_FOUND, font_paths, local_font_path, FONT_DOWNLOAD_ERROR
+    
+    try:
+        ensure_font_registered()
+    except Exception as e:
+        pass
+        
+    # 重新導入，確保取得最新的全域變數狀態
+    from services.export_service import FONT_NAME, FONT_BOLD_NAME, FONT_FOUND, FONT_DOWNLOAD_ERROR
     
     font_status = []
     for name, path in font_paths:
@@ -139,6 +148,7 @@ async def debug_fonts():
         "FONT_NAME": FONT_NAME,
         "FONT_BOLD_NAME": FONT_BOLD_NAME,
         "FONT_FOUND": FONT_FOUND,
+        "FONT_DOWNLOAD_ERROR": FONT_DOWNLOAD_ERROR,
         "local_font_path": local_font_path,
         "local_font_exists": os.path.exists(local_font_path),
         "local_font_size": os.path.getsize(local_font_path) if os.path.exists(local_font_path) else 0,

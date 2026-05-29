@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 FONT_NAME = "Helvetica"
 FONT_BOLD_NAME = "Helvetica-Bold"
 FONT_FOUND = False
+FONT_DOWNLOAD_ERROR = "尚未執行字體下載防禦"
 
 # 取得專案根目錄與本地字體快取路徑
 base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -57,6 +58,7 @@ font_paths = [
 
 def check_and_download_backup_font():
     """檢查是否有任何系統內建中文字體存在，若無，且本地亦無備用字體，則自動進行動態下載防禦"""
+    global FONT_DOWNLOAD_ERROR
     system_font_found = False
     for _, path in font_paths[:-1]:  # 排除最後一個本地路徑
         if os.path.exists(path):
@@ -64,25 +66,44 @@ def check_and_download_backup_font():
             break
             
     if not system_font_found and not os.path.exists(local_font_path):
-        try:
-            logger.info("檢測到目前環境中缺乏中文字體，啟動 NotoSansTC 備援字體自動下載程序...")
-            os.makedirs(local_font_dir, exist_ok=True)
-            url = "https://github.com/google/fonts/raw/main/ofl/notosanstc/static/NotoSansTC-Regular.ttf"
-            
-            import urllib.request
-            import ssl
-            # 建立一個不驗證 SSL 憑證的 Context，徹底防禦 Linux/Docker 環境下憑證缺失導致的 SSL 連線錯誤
-            context = ssl._create_unverified_context()
-            
-            req = urllib.request.Request(
-                url, 
-                headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
-            )
-            with urllib.request.urlopen(req, context=context, timeout=20) as response, open(local_font_path, 'wb') as out_file:
-                out_file.write(response.read())
-            logger.info("備援中文字體下載成功，已儲存至本地備用路徑。")
-        except Exception as e:
-            logger.warning(f"動態下載備用字體失敗: {str(e)}")
+        # 準備多個下載來源 (確保在全球任何雲端伺服器網路皆能順利下載)
+        urls = [
+            "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanstc/static/NotoSansTC-Regular.ttf", # jsDelivr 全球加速 CDN (極速且穩定)
+            "https://github.com/google/fonts/raw/main/ofl/notosanstc/static/NotoSansTC-Regular.ttf"      # GitHub Raw 原始路徑 (備援)
+        ]
+        
+        errors = []
+        for url in urls:
+            try:
+                logger.info(f"正在嘗試自 {url} 下載 NotoSansTC 中文字體...")
+                os.makedirs(local_font_dir, exist_ok=True)
+                
+                import urllib.request
+                import ssl
+                # 建立一個不驗證 SSL 憑證的 Context，徹底防禦 Linux/Docker 環境下憑證缺失導致的 SSL 連線錯誤
+                context = ssl._create_unverified_context()
+                
+                req = urllib.request.Request(
+                    url, 
+                    headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+                )
+                with urllib.request.urlopen(req, context=context, timeout=20) as response, open(local_font_path, 'wb') as out_file:
+                    out_file.write(response.read())
+                logger.info(f"備援中文字體下載成功！來源: {url}")
+                FONT_DOWNLOAD_ERROR = f"成功 (來源: {url})"
+                return True
+            except Exception as e:
+                logger.warning(f"自 {url} 下載失敗: {str(e)}")
+                errors.append(f"[{url}] {str(e)}")
+        
+        FONT_DOWNLOAD_ERROR = "所有下載來源皆失敗: " + " | ".join(errors)
+        return False
+    else:
+        if system_font_found:
+            FONT_DOWNLOAD_ERROR = "已找到內建系統字體，跳過下載"
+        elif os.path.exists(local_font_path):
+            FONT_DOWNLOAD_ERROR = "本地備援字體已存在，跳過下載"
+        return True
 
 def ensure_font_registered():
     """確保中文字體已正確載入 (可被重複呼叫，具備執行期自動防禦機制)"""

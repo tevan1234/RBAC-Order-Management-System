@@ -741,4 +741,91 @@ async def test_analytics_date_dependency_updated_at(ac: AsyncClient):
         app.dependency_overrides.clear()
 
 
+# ==================== 手動同步發信 API 測試 ====================
+
+@pytest.mark.asyncio
+async def test_send_report_email_success(ac: AsyncClient):
+    """
+    測試手動發信 API 成功情況 (模擬 EmailService 成功)。
+    """
+    admin_user = {
+        "id": "uuid-admin",
+        "email": "admin@test.com",
+        "profile": {"id": "uuid-admin", "employee_id": "EMP_ADMIN", "role": "admin", "status": "active"}
+    }
+    from services.auth_service import get_current_user
+    app.dependency_overrides[get_current_user] = lambda: admin_user
+
+    try:
+        # Mock 導出 PDF & Excel 與發信服務
+        with patch("services.export_service.ExportService.generate_pdf") as mock_pdf, \
+             patch("services.export_service.ExportService.generate_excel") as mock_excel, \
+             patch("services.email_service.EmailService.send_report_with_attachments") as mock_send_email:
+            
+            mock_pdf.return_value = b"%PDF mock"
+            mock_excel.return_value = b"excel mock"
+            mock_send_email.return_value = True
+
+            payload = {
+                "email": "target@test.com",
+                "filters": {},
+                "report_summary": "AI 銷售摘要",
+                "report_content": {"summary": "測試"}
+            }
+
+            headers = {"Authorization": "Bearer fake-token"}
+            response = await ac.post("/api/analytics/send-report-email", json=payload, headers=headers)
+
+            assert response.status_code == 200
+            assert response.json()["message"] == "測試分析報告郵件已成功寄出！"
+            mock_send_email.assert_called_once()
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_send_report_email_failure_500(ac: AsyncClient):
+    """
+    測試手動發信 API 失敗情況：
+    當 EmailService 發信失敗或拋出異常時，API 能回傳 500 錯誤與詳細原因，以便前端呈現。
+    """
+    admin_user = {
+        "id": "uuid-admin",
+        "email": "admin@test.com",
+        "profile": {"id": "uuid-admin", "employee_id": "EMP_ADMIN", "role": "admin", "status": "active"}
+    }
+    from services.auth_service import get_current_user
+    app.dependency_overrides[get_current_user] = lambda: admin_user
+
+    try:
+        with patch("services.export_service.ExportService.generate_pdf") as mock_pdf, \
+             patch("services.export_service.ExportService.generate_excel") as mock_excel, \
+             patch("services.email_service.EmailService.send_report_with_attachments") as mock_send_email:
+            
+            mock_pdf.return_value = b"%PDF mock"
+            mock_excel.return_value = b"excel mock"
+            # 模擬 smtplib 連接逾時或驗證失敗拋出錯誤
+            mock_send_email.side_effect = Exception("SMTP Connection timed out or Authentication failed")
+
+            payload = {
+                "email": "target@test.com",
+                "filters": {},
+                "report_summary": "AI 銷售摘要",
+                "report_content": {"summary": "測試"}
+            }
+
+            headers = {"Authorization": "Bearer fake-token"}
+            response = await ac.post("/api/analytics/send-report-email", json=payload, headers=headers)
+
+            # 驗證是否拋出 500 錯誤且回傳詳細原因
+            assert response.status_code == 500
+            data = response.json()
+            assert "發送報告郵件失敗" in data["detail"]
+            assert "SMTP Connection timed out" in data["detail"]
+
+    finally:
+        app.dependency_overrides.clear()
+
+
 

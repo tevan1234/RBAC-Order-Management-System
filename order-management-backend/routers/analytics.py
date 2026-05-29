@@ -257,23 +257,31 @@ async def get_task_status(
 @router.post("/send-report-email")
 async def send_report_email(
     req: SendEmailRequest,
-    background_tasks: BackgroundTasks,
     user: dict = Depends(get_current_user),
     _: dict = Depends(require_permission("ANALYTICS_VIEW"))
 ):
     """
     手動發送 AI 銷售報告至使用者信箱。
-    封裝「Email、篩選參數、報告摘要、報告內容」為 JSON，並傳入使用者上下文 (RBAC)，以 BackgroundTasks 發送至外部 n8n Webhook 與/或本地 SMTP 寄送。
+    封裝「Email、篩選參數、報告摘要、報告內容」為 JSON，並傳入使用者上下文 (RBAC)，
+    本 API 改為同步 await 方式執行。當發信失敗時，會拋出 HTTPException (500) 以及詳細的錯誤原因，
+    讓前端能精準地在 UI 畫面上呈現錯誤訊息給使用者。
     """
-    background_tasks.add_task(
-        AnalyticsService.send_report_email_task,
-        email=req.email,
-        filters=req.filters,
-        report_summary=req.report_summary,
-        report_content=req.report_content,
-        user=user
-    )
-    return {"message": "報告發送任務已成功排入背景佇列"}
+    try:
+        await AnalyticsService.send_report_email_task(
+            email=req.email,
+            filters=req.filters,
+            report_summary=req.report_summary,
+            report_content=req.report_content,
+            user=user,
+            raise_on_error=True
+        )
+        return {"message": "測試分析報告郵件已成功寄出！"}
+    except Exception as e:
+        logger.error(f"手動發送報告郵件失敗: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"發送報告郵件失敗: {str(e)}"
+        )
 
 
 @router.get("/subscription", response_model=SubscriptionSchema)

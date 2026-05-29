@@ -2,6 +2,7 @@ import os
 import logging
 import smtplib
 import asyncio
+import ssl
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
@@ -86,16 +87,19 @@ class EmailService:
         # 4. 建立 SMTP 連線並寄送
         logger.info(f"正在連線至 SMTP 伺服器 {configs['host']}:{configs['port']}...")
         
+        # 建立一個不驗證 SSL 憑證的 Context，防禦 Linux/Docker 環境下憑證缺失導致 of SSL 連線錯誤
+        context = ssl._create_unverified_context()
+        
         # 依據 port 來決定是否直接建立 SSL 連線或使用 TLS
         if configs["port"] == 465:
-            server = smtplib.SMTP_SSL(configs["host"], configs["port"], timeout=15.0)
+            server = smtplib.SMTP_SSL(configs["host"], configs["port"], context=context, timeout=15.0)
         else:
             server = smtplib.SMTP(configs["host"], configs["port"], timeout=15.0)
 
         try:
             server.ehlo()
             if configs["port"] != 465 and configs["use_tls"]:
-                server.starttls()
+                server.starttls(context=context)
                 server.ehlo()
                 
             # 登入驗證
@@ -117,7 +121,8 @@ class EmailService:
         subject: str,
         html_content: str,
         text_content: str,
-        attachments: List[Dict[str, Any]]
+        attachments: List[Dict[str, Any]],
+        raise_on_error: bool = False
     ) -> bool:
         """
         非同步發送包含多重附件的電子郵件。
@@ -158,5 +163,7 @@ class EmailService:
             return True
         except Exception as e:
             logger.error(f"Email 本地發送失敗: {str(e)}", exc_info=True)
+            if raise_on_error:
+                raise e
             # 不在背景任務中拋出 HTTPException 導致伺服器出錯，僅回傳 False 讓上層做日誌防禦
             return False

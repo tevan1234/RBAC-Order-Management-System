@@ -587,7 +587,14 @@ class AnalyticsService:
                 logger.error(f"更新任務為失敗狀態時也失敗: {str(ue)}")
 
     @staticmethod
-    async def send_report_email_task(email: str, filters: dict, report_summary: str, report_content: dict, user: dict) -> None:
+    async def send_report_email_task(
+        email: str, 
+        filters: dict, 
+        report_summary: str, 
+        report_content: dict, 
+        user: dict,
+        raise_on_error: bool = False
+    ) -> None:
         """
         雙軌制背景發信任務：
         1. 本地直寄 (ENABLE_SMTP_DIRECT)：生成 PDF / Excel 附件（若為 Viewer 則依 RBAC 安全防禦自動排除 Excel 附件），並使用科技感 HTML 模板發送。
@@ -628,6 +635,8 @@ class AnalyticsService:
                 logger.info("PDF 報告附件生成成功")
         except Exception as pe:
             logger.error(f"生成 PDF 報告附件失敗: {str(pe)}", exc_info=True)
+            if raise_on_error:
+                raise pe
 
         # B. 安全過濾 (RBAC)：如果角色為 viewer (檢視者)，強制進行安全降級，不生成也不夾帶 Excel 原始明細附件
         if role == "viewer":
@@ -644,6 +653,8 @@ class AnalyticsService:
                     logger.info("Excel 數據明細附件生成成功")
             except Exception as ee:
                 logger.warning(f"生成 Excel 數據明細附件失敗或被拒絕: {str(ee)}")
+                if raise_on_error:
+                    raise ee
 
         # 2. 軌道一：本地 SMTP 直接發信
         enable_smtp = os.getenv("ENABLE_SMTP_DIRECT", "True").lower() == "true"
@@ -661,15 +672,20 @@ class AnalyticsService:
                 text_content = f"您的 AI 銷售分析報告已成功生成。\n摘要: {report_summary}\n請查收信件中夾帶的 PDF 與 Excel 附件以檢視完整數據分析。"
                 
                 # 呼叫非同步 EmailService 發信
-                await EmailService.send_report_with_attachments(
+                success = await EmailService.send_report_with_attachments(
                     email=target_email,
                     subject=subject,
                     html_content=html_content,
                     text_content=text_content,
-                    attachments=attachments
+                    attachments=attachments,
+                    raise_on_error=raise_on_error
                 )
+                if not success and raise_on_error:
+                    raise Exception("本地 SMTP 寄送失敗，功能被禁用或憑證異常。")
             except Exception as se:
                 logger.error(f"本地 SMTP 直寄通道發信失敗: {str(se)}", exc_info=True)
+                if raise_on_error:
+                    raise se
 
         # 3. 軌道二：外部 n8n Webhook 調用
         enable_n8n = os.getenv("ENABLE_N8N_WEBHOOK", "False").lower() == "true"

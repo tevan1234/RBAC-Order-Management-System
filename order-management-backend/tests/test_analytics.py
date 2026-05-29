@@ -828,4 +828,107 @@ async def test_send_report_email_failure_500(ac: AsyncClient):
         app.dependency_overrides.clear()
 
 
+# ==================== Google Gmail API 管道測試 ====================
+
+@pytest.mark.asyncio
+async def test_send_report_email_via_gmail_api_success(ac: AsyncClient):
+    """
+    測試啟用 Google Gmail API 時，手動發信 API 成功調用 Gmail API 通道的情況。
+    """
+    import os
+    admin_user = {
+        "id": "uuid-admin",
+        "email": "admin@test.com",
+        "profile": {"id": "uuid-admin", "employee_id": "EMP_ADMIN", "role": "admin", "status": "active"}
+    }
+    from services.auth_service import get_current_user
+    app.dependency_overrides[get_current_user] = lambda: admin_user
+
+    # 模擬環境變數配置了 Gmail API 憑證
+    env_mock = {
+        "GMAIL_API_CLIENT_ID": "mock-client-id",
+        "GMAIL_API_CLIENT_SECRET": "mock-client-secret",
+        "GMAIL_API_REFRESH_TOKEN": "mock-refresh-token",
+        "ENABLE_SMTP_DIRECT": "True"
+    }
+
+    try:
+        with patch.dict(os.environ, env_mock), \
+             patch("services.export_service.ExportService.generate_pdf") as mock_pdf, \
+             patch("services.export_service.ExportService.generate_excel") as mock_excel, \
+             patch("services.email_service.EmailService._send_gmail_api_blocking") as mock_gmail_send:
+            
+            mock_pdf.return_value = b"%PDF mock"
+            mock_excel.return_value = b"excel mock"
+            mock_gmail_send.return_value = None
+
+            payload = {
+                "email": "target@test.com",
+                "filters": {},
+                "report_summary": "AI 銷售摘要",
+                "report_content": {"summary": "測試"}
+            }
+
+            headers = {"Authorization": "Bearer fake-token"}
+            response = await ac.post("/api/analytics/send-report-email", json=payload, headers=headers)
+
+            assert response.status_code == 200
+            assert response.json()["message"] == "測試分析報告郵件已成功寄出！"
+            # 確保確實調用了 Gmail API，而不是走傳統的 SMTP
+            mock_gmail_send.assert_called_once()
+
+    finally:
+        app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_send_report_email_via_gmail_api_failure(ac: AsyncClient):
+    """
+    測試當 Google Gmail API 發信失敗時，API 是否能捕獲錯誤並回傳 500 給前端。
+    """
+    import os
+    admin_user = {
+        "id": "uuid-admin",
+        "email": "admin@test.com",
+        "profile": {"id": "uuid-admin", "employee_id": "EMP_ADMIN", "role": "admin", "status": "active"}
+    }
+    from services.auth_service import get_current_user
+    app.dependency_overrides[get_current_user] = lambda: admin_user
+
+    env_mock = {
+        "GMAIL_API_CLIENT_ID": "mock-client-id",
+        "GMAIL_API_CLIENT_SECRET": "mock-client-secret",
+        "GMAIL_API_REFRESH_TOKEN": "mock-refresh-token",
+        "ENABLE_SMTP_DIRECT": "True"
+    }
+
+    try:
+        with patch.dict(os.environ, env_mock), \
+             patch("services.export_service.ExportService.generate_pdf") as mock_pdf, \
+             patch("services.export_service.ExportService.generate_excel") as mock_excel, \
+             patch("services.email_service.EmailService._send_gmail_api_blocking") as mock_gmail_send:
+            
+            mock_pdf.return_value = b"%PDF mock"
+            mock_excel.return_value = b"excel mock"
+            mock_gmail_send.side_effect = Exception("Gmail API Error: Invalid Refresh Token")
+
+            payload = {
+                "email": "target@test.com",
+                "filters": {},
+                "report_summary": "AI 銷售摘要",
+                "report_content": {"summary": "測試"}
+            }
+
+            headers = {"Authorization": "Bearer fake-token"}
+            response = await ac.post("/api/analytics/send-report-email", json=payload, headers=headers)
+
+            assert response.status_code == 500
+            data = response.json()
+            assert "發送報告郵件失敗" in data["detail"]
+            assert "Gmail API Error: Invalid Refresh Token" in data["detail"]
+
+    finally:
+        app.dependency_overrides.clear()
+
+
 

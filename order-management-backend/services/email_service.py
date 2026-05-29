@@ -3,6 +3,7 @@ import logging
 import smtplib
 import asyncio
 import ssl
+import base64
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
@@ -12,6 +13,90 @@ from typing import List, Dict, Any
 logger = logging.getLogger(__name__)
 
 class EmailService:
+    @staticmethod
+    def _get_gmail_api_configs() -> Dict[str, Any]:
+        """
+        獲取環境變數中的 Google Gmail API 憑證設定項目。
+        """
+        return {
+            "client_id": os.getenv("GMAIL_API_CLIENT_ID"),
+            "client_secret": os.getenv("GMAIL_API_CLIENT_SECRET"),
+            "refresh_token": os.getenv("GMAIL_API_REFRESH_TOKEN"),
+        }
+
+    @classmethod
+    def _is_gmail_api_configured(cls) -> bool:
+        """
+        檢查是否已經配置了完整的 Gmail API 憑證環境變數。
+        """
+        configs = cls._get_gmail_api_configs()
+        return bool(configs["client_id"] and configs["client_secret"] and configs["refresh_token"])
+
+    @staticmethod
+    def _send_gmail_api_blocking(
+        to_email: str,
+        subject: str,
+        html_content: str,
+        text_content: str,
+        attachments: List[Dict[str, Any]],
+        configs: Dict[str, Any]
+    ) -> None:
+        """
+        以同步阻塞方式透過 Google Gmail REST API (走 HTTPS 443 埠) 發送電子郵件。
+        """
+        from google.oauth2.credentials import Credentials
+        from googleapiclient.discovery import build
+
+        # 1. 建立符合標準的 MIME 多重郵件結構
+        msg = MIMEMultipart()
+        msg["From"] = configs["from_addr"] or os.getenv("SMTP_FROM") or os.getenv("SMTP_USER")
+        msg["To"] = to_email
+        msg["Subject"] = subject
+
+        # 2. 附加純文字與 HTML 內文軌道
+        if text_content:
+            msg.attach(MIMEText(text_content, "plain", "utf-8"))
+        if html_content:
+            msg.attach(MIMEText(html_content, "html", "utf-8"))
+
+        # 3. 附加多重附件
+        for att in attachments:
+            data = att.get("data")
+            filename = att.get("filename", "attachment")
+            mime_type = att.get("mime_type", "application/octet-stream")
+
+            if not data:
+                continue
+
+            maintype, subtype = mime_type.split("/", 1) if "/" in mime_type else ("application", "octet-stream")
+            part = MIMEBase(maintype, subtype)
+            part.set_payload(data)
+            encoders.encode_base64(part)
+            part.add_header("Content-Disposition", f"attachment; filename={filename}")
+            msg.attach(part)
+
+        # 4. 初始化 Google API Credentials
+        creds = Credentials(
+            token=None,
+            refresh_token=configs["refresh_token"],
+            token_uri="https://oauth2.googleapis.com/token",
+            client_id=configs["client_id"],
+            client_secret=configs["client_secret"]
+        )
+
+        # 5. 建立 Gmail API 服務
+        logger.info("正在連線並建立 Google Gmail REST API 服務...")
+        service = build("gmail", "v1", credentials=creds, cache_discovery=False)
+
+        # 6. 將 MIME 郵件編碼為 Base64 urlsafe 格式以符合 Gmail API 規範
+        raw_message = base64.urlsafe_b64encode(msg.as_bytes()).decode("utf-8")
+        payload = {"raw": raw_message}
+
+        # 7. 送出郵件
+        logger.info(f"正在透過 Gmail API HTTPS 通道直接發信至 {to_email}...")
+        service.users().messages().send(userId="me", body=payload).execute()
+        logger.info(f"Gmail API 發信成功！已送至 {to_email}，附件數量: {len(attachments)}")
+
     @staticmethod
     def _get_smtp_configs() -> Dict[str, Any]:
         """
@@ -126,20 +211,46 @@ class EmailService:
     ) -> bool:
         """
         非同步發送包含多重附件的電子郵件。
-        - 採用 asyncio.to_thread 將阻塞性 SMTP 連線作業外派至內部執行緒池，保障 FastAPI 事件循環不中斷。
-        - 若未配置 SMTP 憑證，將自動優雅降級為 Mock 模擬發信模式。
+        - 優先偵測並使用 Google Gmail API 走 HTTPS Port 443 發信，以 100% 避開雲端平台（如 Render）的 SMTP 封鎖。
+        - 若未設定 Gmail API，則 Fallback 降級走傳統 SMTP 連線。
+        - 若皆未設定，自動優雅降級為 Mock 模擬發信模式。
         """
+        # 1. 優先判定並呼叫 Google Gmail API 發信軌道
+        if cls._is_gmail_api_configured():
+            logger.info("檢測到已配置 Gmail API 憑證，將優先啟用 Google Gmail REST API (HTTPS Port 443) 通道直接發信...")
+            api_configs = cls._get_gmail_api_configs()
+            smtp_configs = cls._get_smtp_configs()
+            api_configs["from_addr"] = smtp_configs.get("from_addr") or os.getenv("SMTP_FROM") or os.getenv("SMTP_USER")
+            
+            try:
+                await asyncio.to_thread(
+                    cls._send_gmail_api_blocking,
+                    to_email=email,
+                    subject=subject,
+                    html_content=html_content,
+                    text_content=text_content,
+                    attachments=attachments,
+                    configs=api_configs
+                )
+                return True
+            except Exception as e:
+                logger.error(f"Gmail API 發信失敗: {str(e)}", exc_info=True)
+                if raise_on_error:
+                    raise e
+                return False
+
+        # 2. 以下為原先的 SMTP / Mock Fallback 通道
         configs = cls._get_smtp_configs()
         
-        # 1. 檢查是否啟用本地直接寄送
+        # 檢查是否啟用本地直接寄送
         if not configs["enable_direct"]:
             logger.info(f"[EmailService] 本地直寄功能已關閉 (ENABLE_SMTP_DIRECT=False)")
             return False
 
-        # 2. 健全度防禦：若 SMTP 憑證未填寫，自動優雅降級為 Mock 發信，不中斷業務流程
+        # 健全度防禦：若 SMTP 憑證未填寫，自動優雅降級為 Mock 發信，不中斷業務流程
         if not configs["user"] or not configs["password"]:
             logger.warning(
-                f"[Mock Email Send] SMTP 帳號或密碼未填寫！將自動進行模擬發信。\n"
+                f"[Mock Email Send] SMTP 帳號或密碼未填寫且未設定 Gmail API！將自動進行模擬發信。\n"
                 f"收件者: {email}\n"
                 f"標題: {subject}\n"
                 f"夾帶附件列表: {[att.get('filename') for att in attachments]}\n"
@@ -149,7 +260,7 @@ class EmailService:
             await asyncio.sleep(0.5)
             return True
 
-        # 3. 呼叫 smtplib 阻塞性發信，外派至執行緒池執行
+        # 呼叫 smtplib 阻塞性發信，外派至執行緒池執行
         try:
             await asyncio.to_thread(
                 cls._send_smtp_blocking,
@@ -162,7 +273,7 @@ class EmailService:
             )
             return True
         except Exception as e:
-            logger.error(f"Email 本地發送失敗: {str(e)}", exc_info=True)
+            logger.error(f"Email 本地 SMTP 發送失敗: {str(e)}", exc_info=True)
             if raise_on_error:
                 raise e
             # 不在背景任務中拋出 HTTPException 導致伺服器出錯，僅回傳 False 讓上層做日誌防禦

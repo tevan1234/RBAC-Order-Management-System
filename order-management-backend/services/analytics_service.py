@@ -708,8 +708,12 @@ class AnalyticsService:
                         logger.info(f"成功發送 Webhook 至 n8n。狀態碼: {res.status_code}")
                 except Exception as ne:
                     logger.error(f"發送 Webhook 至 n8n 失敗: {str(ne)}")
+                    if raise_on_error:
+                        raise ne
             else:
                 logger.warning("[n8n Webhook] n8n Webhook 功能已開啟，但未配置 N8N_WEBHOOK_URL！跳過調用。")
+                if raise_on_error:
+                    raise Exception("n8n Webhook 功能已啟用，但未配置 N8N_WEBHOOK_URL。")
 
 
 

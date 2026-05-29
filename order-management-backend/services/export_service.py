@@ -68,8 +68,8 @@ def check_and_download_backup_font():
     if not system_font_found and not os.path.exists(local_font_path):
         # 準備多個下載來源 (確保在全球任何雲端伺服器網路皆能順利下載)
         urls = [
-            "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanstc/static/NotoSansTC-Regular.ttf", # jsDelivr 全球加速 CDN (極速且穩定)
-            "https://github.com/google/fonts/raw/main/ofl/notosanstc/static/NotoSansTC-Regular.ttf"      # GitHub Raw 原始路徑 (備援)
+            "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanstc/NotoSansTC%5Bwght%5D.ttf", # jsDelivr 全球加速 CDN (使用編碼括號)
+            "https://raw.githubusercontent.com/google/fonts/main/ofl/notosanstc/NotoSansTC%5Bwght%5D.ttf"  # GitHub Raw 原始路徑 (使用編碼括號)
         ]
         
         errors = []
@@ -87,7 +87,7 @@ def check_and_download_backup_font():
                     url, 
                     headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
                 )
-                with urllib.request.urlopen(req, context=context, timeout=20) as response, open(local_font_path, 'wb') as out_file:
+                with urllib.request.urlopen(req, context=context, timeout=45) as response, open(local_font_path, 'wb') as out_file:
                     out_file.write(response.read())
                 logger.info(f"備援中文字體下載成功！來源: {url}")
                 FONT_DOWNLOAD_ERROR = f"成功 (來源: {url})"

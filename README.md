@@ -13,7 +13,7 @@
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-009688?style=flat-square&logo=fastapi&logoColor=white)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Supabase-4169E1?style=flat-square&logo=postgresql&logoColor=white)
 ![JWT](https://img.shields.io/badge/Auth-JWT-000000?style=flat-square&logo=jsonwebtokens&logoColor=white)
-![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=flat-square&logo=docker&logoColor=white)
+![Render](https://img.shields.io/badge/Deployed-Render-46E3B7?style=flat-square&logo=render&logoColor=white)
 ![Gemini](https://img.shields.io/badge/AI-Gemini_API-8E75B2?style=flat-square&logo=google&logoColor=white)
 
 </div>
@@ -39,7 +39,7 @@
 - ⚙️ **工作流程狀態管控** — 訂單狀態轉換在後端以狀態機強制驗證，拒絕違規操作並寫入稽核紀錄
 - 🤖 **AI 角色差異化報告** — Admin/Viewer 取得宏觀策略分析，Sales 取得個人業績微觀建議
 - 📊 **多格式報表匯出** — PDF（含圖表）/ Excel 多工作表，Viewer 角色後端強制禁止 Excel 匯出
-- 📬 **雙軌制郵件通知** — SMTP 直寄附件 + n8n Webhook 外部自動化，環境變數動態切換
+- 📬 **雙軌制郵件通知** — SMTP 直寄附件 + n8n Webhook 外部自動化介面（接口已備妥），環境變數動態切換
 - 🛡️ **安全隱蔽設計** — 未授權存取一律回傳 `404`（非 `403`），避免資源存在性洩露
 
 ---
@@ -53,6 +53,7 @@
 - [模組架構](#模組架構)
 - [API 設計](#api-設計)
 - [安全機制](#安全機制)
+- [部署](#部署)
 - [安裝與開發環境](#安裝與開發環境)
 - [系統截圖](#系統截圖)
 - [開發進程與架構演進規劃](#開發進程與架構演進規劃)
@@ -95,7 +96,7 @@
 
 ### 架構概覽
 
-系統採用**前後端分離架構**，後端以 FastAPI 建構 RESTful API 服務，前端為 Node.js Express 靜態服務。所有請求在進入業務邏輯前，均須通過 RBAC 驗證層（JWT 解析 → 角色比對 → 資源所有權確認），業務邏輯集中於 Service 層，資料存取統一透過 Repository 層封裝。
+系統採用**前後端分離架構**，後端以 FastAPI 建構 RESTful API 服務，前端為 Node.js Express 靜態服務，兩者均部署於 Render 雲端平台。所有請求在進入業務邏輯前，均須通過 RBAC 驗證層（JWT 解析 → 角色比對 → 資源所有權確認），業務邏輯集中於 Service 層，資料存取統一透過 Repository 層封裝。
 
 ```mermaid
 flowchart TD
@@ -136,7 +137,7 @@ flowchart TD
     subgraph External["外部服務"]
         Gemini["Google Gemini API\nAI 銷售報告生成"]
         SMTP["SMTP Server\n郵件通知"]
-        N8N["n8n Webhook\n外部自動化工作流"]
+        N8N["n8n Webhook\n外部自動化工作流（接口已備妥）"]
     end
 
     Client -->|"HTTPS Request"| Frontend
@@ -151,7 +152,7 @@ flowchart TD
     SupaAuth -->|"User Profile"| Cache
     AnalyticsSvc -->|"Prompt + 聚合數據"| Gemini
     ExportSvc -->|"PDF / Excel 附件"| SMTP
-    AnalyticsSvc -->|"Webhook Payload"| N8N
+    AnalyticsSvc -->|"Webhook Payload（待接通）"| N8N
 ```
 
 ---
@@ -181,7 +182,7 @@ flowchart TD
 |------|------|--------------|
 | **Python** | 3.11+ | 主要開發語言；型別提示搭配 Pydantic v2 強化執行期型別安全 |
 | **FastAPI** | ≥ 0.100 | 非同步 ASGI 框架；`Depends` 注入系統作為 RBAC 三層驗證的載體；自動生成 OpenAPI 文件 |
-| **Uvicorn** | ≥ 0.23 | ASGI 伺服器；生產環境以 `--workers` 多 Process 模式部署 |
+| **Uvicorn** | ≥ 0.23 | ASGI 伺服器；Render 部署以單 worker 模式運行 |
 | **Pydantic v2** | ≥ 2.0 | 所有 API 輸入／輸出的 Schema 定義與驗證；`AIReportResponse` 對 Gemini JSON 輸出進行強制 Schema 驗證 |
 | **SlowAPI** | ≥ 0.1.9 | ASGI 相容速率限制中介層；搭配自訂 `429` 例外處理器注入 `X-RateLimit-*` 標頭 |
 
@@ -189,7 +190,7 @@ flowchart TD
 
 | 技術 | 版本 | 在系統中的角色 |
 |------|------|--------------|
-| **PostgreSQL** | 15+（Supabase 託管）| 主要關聯式資料庫；`profiles`、`orders`、`customers`、`products`、`audit_logs`、`report_history` 等核心資料表 |
+| **PostgreSQL** | 15+（Supabase 託管）| 主要關聯式資料庫；`profiles`、`orders`、`customers`、`products`、`audit_logs`、`report_history`、`analytics_subscriptions` 等核心資料表 |
 | **Supabase** | ≥ 2.0 | PostgreSQL 託管平台；提供 Row Level Security（RLS）作為資料庫層的最後一道隔離防線；`supabase-py` SDK 封裝於 Repository 層 |
 | **Row Level Security** | — | 與應用層 RBAC 互為縱深防禦；即使 Repository 層查詢條件出現漏洞，RLS Policy 仍阻止跨使用者資料存取 |
 
@@ -222,8 +223,9 @@ flowchart TD
 
 | 技術 | 版本 | 在系統中的角色 |
 |------|------|--------------|
+| **Google Gmail API** | — | 優先郵件通道；走 HTTPS 443 埠，完全規避 Render 平台對 SMTP 埠的封鎖；OAuth2 憑證透過環境變數注入 |
 | **SMTP（aiosmtplib）** | — | 非同步直寄，附帶 PDF / Excel 附件與 HTML 模板；Viewer 角色收到的郵件自動排除 Excel 附件 |
-| **n8n Webhook** | — | 雙軌制通知的第二軌；將報告 Payload 發送至 n8n 自動化工作流，支援與 Slack、CRM 等外部系統整合；由環境變數 `ENABLE_N8N_WEBHOOK` 動態啟停 |
+| **n8n Webhook** | — | 雙軌制通知的第二軌（接口已備妥）；將報告 Payload 發送至 n8n 自動化工作流，支援與 Slack、CRM 等外部系統整合；只需設定 `N8N_WEBHOOK_URL` 與 `ENABLE_N8N_WEBHOOK=True` 即可啟用 |
 | **httpx** | ≥ 0.24 | 非同步 HTTP 用戶端；用於 Webhook 發送，設定 10 秒 Timeout 防止外部服務無限阻塞 |
 
 #### 容器化與部署
@@ -589,9 +591,44 @@ order-management-backend/
 │   ├── rate_limit_cache.py    # 密碼失敗計數與帳號鎖定（Thread-Safe）
 │   └── supabase_client.py     # Supabase 用戶端（一般 / Admin 雙模式）
 ├── repositories/              # 資料存取層（Repository Pattern）
+│   ├── base_repository.py     # 通用 CRUD 抽象基底類別
+│   ├── order_repository.py    # 訂單查詢（含日期篩選、analytics 聚合）
+│   ├── customer_repository.py # 客戶查詢（含 owner_id 範圍篩選）
+│   ├── product_repository.py  # 商品列表查詢
+│   ├── user_repository.py     # 使用者 Profile 查詢與更新
+│   ├── audit_repository.py    # 稽核日誌寫入與查詢
+│   ├── report_history_repository.py  # AI 報告歷史與快取管理
+│   └── subscription_repository.py    # 訂閱偏好 CRUD（analytics_subscriptions 表）
 └── models/
     └── schemas.py             # Pydantic 資料模型與輸入驗證
 ```
+
+```
+order-management-frontend/
+├── server.js                  # Express 靜態服務，動態注入 API_BASE 與 CSP 標頭
+└── public/
+    ├── index.html             # 登入頁
+    ├── dashboard.html         # 主儀表板（單頁應用）
+    └── js/
+        ├── auth.js            # 登入、登出、JWT 記憶體儲存與 sessionStorage 混淆備援
+        ├── dashboard.js       # 儀表板初始化與模組掛載
+        ├── rbac.js            # 前端 RBAC 顯示控制（依角色切換 UI 元素）
+        ├── utils.js           # 通用工具：escapeHtml、Modal、Dropdown 等
+        ├── analytics-module.js # AI 銷售分析報告模組（圖表、歷史紀錄）
+        └── modules/           # 儀表板功能子模組（按功能域拆分）
+            ├── state.js       # 全域共享狀態（token、user、分頁狀態）
+            ├── navigation.js  # 側邊欄導覽、分頁切換
+            ├── orders.js      # 訂單列表、建立、狀態轉換
+            ├── customers.js   # 客戶管理
+            ├── products.js    # 商品管理
+            ├── users.js       # 使用者管理（Admin）
+            ├── audit-logs.js  # 稽核日誌查詢
+            ├── account-settings.js # 帳號設定（密碼修改、Email 更新）
+            ├── ai-widget.js   # 首頁 AI 銷售速報小工具
+            ├── data-loader.js # 通用資料載入（商品 / 客戶下拉選單）
+            ├── events.js      # 全域事件綁定與分發
+            ├── paginator.js   # 分頁元件
+            └── ui-core.js     # 導覽徽章更新、選單渲染等 UI 核心
 
 ---
 
@@ -936,7 +973,8 @@ Content-Type: application/json
 | `GET` | `/users` | 取得使用者清單 | Admin |
 | `POST` | `/users` | 建立使用者帳號 | Admin |
 | `GET` | `/users/{id}` | 取得指定使用者 | Admin |
-| `PUT` | `/users/{id}` | 更新使用者資訊 | Admin |
+| `PATCH` | `/users/{id}` | 更新使用者資訊 | Admin |
+| `PATCH` | `/users/{id}/role` | 修改使用者角色 | Admin |
 | `DELETE` | `/users/{id}` | 刪除使用者 | Admin |
 
 #### 訂單管理 `/api/orders`
@@ -964,16 +1002,17 @@ Content-Type: application/json
 | Method | 路徑 | 說明 | 最低權限 |
 |--------|------|------|---------|
 | `POST` | `/analytics/aggregate` | 銷售資料聚合統計 | Viewer |
-| `POST` | `/analytics/ai-report` | AI 商業報告（同步）| Viewer |
-| `POST` | `/analytics/ai-report/background` | AI 報告非同步背景生成 | Viewer |
-| `GET` | `/analytics/ai-report/status/{task_id}` | 查詢背景任務狀態 | 已登入 |
+| `POST` | `/analytics/generate-report` | AI 商業報告生成（快取支援 / 背景非同步）| Viewer |
+| `GET` | `/analytics/task-status/{task_id}` | 查詢背景任務狀態 | 已登入 |
 | `GET` | `/analytics/history` | AI 報告歷史紀錄 | 已登入 |
 | `GET` | `/analytics/realtime-insights` | 7 日銷售速報（1h 快取）| 已登入 |
-| `POST` | `/analytics/export/pdf` | 下載 PDF 報告 | Viewer |
-| `POST` | `/analytics/export/excel` | 下載 Excel 明細（Viewer 禁止）| Sales |
-| `POST` | `/analytics/send-email` | 背景發送報告郵件 | 已登入 |
+| `POST` | `/analytics/export-pdf` | 下載 PDF 報告 | Viewer |
+| `GET` | `/analytics/export-pdf-direct` | 下載 PDF（GET 直撥，支援 `?token=`）| Viewer |
+| `POST` | `/analytics/export-excel` | 下載 Excel 明細（Viewer 禁止）| Sales |
+| `GET` | `/analytics/export-excel-direct` | 下載 Excel（GET 直撥，支援 `?token=`）| Sales |
+| `POST` | `/analytics/send-report-email` | 發送報告郵件 | 已登入 |
 | `GET` | `/analytics/subscription` | 取得郵件訂閱設定 | 已登入 |
-| `PUT` | `/analytics/subscription` | 更新郵件訂閱設定 | 已登入 |
+| `POST` | `/analytics/subscription` | 更新郵件訂閱設定 | 已登入 |
 
 #### 其他
 
@@ -1003,6 +1042,8 @@ Content-Type: application/json
 | 資源存在性隱蔽 | 未授權存取統一回傳 `404`（非 `403`）| 路由層 |
 | 例外資訊控制 | 生產環境回傳通用訊息，不暴露堆疊追蹤 | 全域例外處理層 |
 | CORS 管控 | 允許 Origin 由環境變數動態注入，禁止硬編碼 | 中介層 |
+| XSS 防護 | 敏感輸出統一以 `escapeHtml()` 跳脫；高風險操作（彈窗、Modal）採 DOM API 替代 `innerHTML` | 前端 |
+| JWT 安全儲存 | Token 存於 JS 記憶體變數；頁面跳轉時混淆後暫存至 sessionStorage，讀取後立即清除 | 前端 |
 
 ---
 
@@ -1157,7 +1198,119 @@ else:
 
 ---
 
+## 部署
 
+### 線上服務（Render）
+
+本系統前後端均以獨立服務形式部署於 [Render](https://render.com) 雲端平台，無需自行管理伺服器。
+
+| 服務 | Render 服務類型 | 語言 / 執行環境 | 說明 |
+|------|---------------|----------------|------|
+| **後端** | Web Service | Python | FastAPI + Uvicorn，掛載所有 API 路由 |
+| **前端** | Web Service | Node.js | Express 靜態服務，動態注入後端 API URL |
+
+---
+
+### Render 部署注意事項
+
+#### 後端（`order-management-backend`）
+
+| 項目 | 設定值 |
+|------|--------|
+| **Build Command** | `pip install -r requirements.txt` |
+| **Start Command** | `uvicorn main:app --host 0.0.0.0 --port $PORT` |
+
+#### 前端（`order-management-frontend`）
+
+| 項目 | 設定值 |
+|------|--------|
+| **Build Command** | `npm install` |
+| **Start Command** | `node server.js` |
+| **環境變數** | `API_BASE=https://<後端服務名稱>.onrender.com/api` |
+
+> 前端 `server.js` 讀取 `API_BASE` 環境變數後，動態注入 `window.ENV.API_BASE` 與 CSP 標頭，無需修改任何靜態檔案。
+
+#### 後端必填環境變數
+
+| 變數名稱 | 說明 |
+|---------|------|
+| `SUPABASE_URL` | Supabase 專案 URL |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase Service Role Key（含 Admin 操作權限，繞過 RLS）|
+| `GEMINI_API_KEY` | Google Gemini API Key |
+| `GEMINI_MODEL` | 模型名稱，建議 `gemini-1.5-flash` |
+| `ENV` | 設為 `production`（抑制詳細錯誤輸出）|
+| `CORS_ORIGINS` | 前端 Render URL，例如 `https://<前端服務名稱>.onrender.com` |
+
+#### 郵件發送方案（擇一設定）
+
+| 方案 | 所需環境變數 | 說明 | 建議 |
+|------|------------|------|------|
+| **Gmail API**（推薦）| `GMAIL_API_CLIENT_ID`<br>`GMAIL_API_CLIENT_SECRET`<br>`GMAIL_API_REFRESH_TOKEN` | 走 HTTPS 443 埠，完全規避 Render 平台對 SMTP 埠（25 / 587）的封鎖 | ✅ 推薦 |
+| **SMTP 直寄**（備選）| `SMTP_HOST` / `SMTP_PORT`<br>`SMTP_USER` / `SMTP_PASSWORD`<br>`ENABLE_SMTP_DIRECT=True` | 走 587 埠，Render 免費方案可能封鎖此埠導致發信失敗 | ⚠️ 備選 |
+
+> 系統優先偵測 Gmail API 憑證；若未設定，自動 Fallback 至 SMTP；若兩者均未設定，進入 Mock 模擬發信模式（僅記錄 Log）。
+
+#### ⚠️ 免費方案限制
+
+| 限制項目 | 說明 |
+|---------|------|
+| **冷啟動延遲** | 服務閒置 15 分鐘後進入休眠，首次請求需等待 30–60 秒重新啟動 |
+| **In-Memory Cache 清空** | 服務重啟後，Profile TTL 快取與 Rate Limit 計數器均會重置（非 Redis 持久化）|
+
+---
+
+### n8n Webhook 串接（待接通）
+
+後端已完整實作 n8n Webhook 發送通道，僅需設定環境變數即可啟用，**無需修改任何後端程式碼**。
+
+#### 啟用步驟
+
+**Step 1 — 建立 n8n Webhook Node**
+
+在 n8n 中新增 Workflow，拖入 **Webhook** 節點（Trigger），取得 Webhook URL（格式：`https://<n8n-instance>/webhook/<id>`）。
+
+**Step 2 — 設定後端環境變數**
+
+```ini
+ENABLE_N8N_WEBHOOK=True
+N8N_WEBHOOK_URL=https://<n8n-instance>/webhook/<id>
+```
+
+**Step 3 — 在 n8n 設計後續 Workflow**
+
+接收 Webhook Payload 後，可連接任意 n8n 節點（發送 Slack 訊息、寫入 CRM、觸發 Email 等），後端已完整發送所有必要欄位。
+
+#### Webhook Payload 範例
+
+後端每次觸發時，發送以下 JSON 至 n8n：
+
+```json
+{
+  "email": "wang.xiaoming@corp.internal",
+  "filters": {
+    "date_from": "2026-05-01",
+    "date_to": "2026-05-31"
+  },
+  "report_summary": "本月營收持續上升，熱銷商品集中於 Q 系列",
+  "report_content": {
+    "summary": "...",
+    "trends": { "..." },
+    "top_products": [ "..." ],
+    "forecast": { "..." },
+    "recommendations": [ "..." ]
+  },
+  "role": "admin",
+  "timestamp": "2026-05-30T15:00:00+00:00"
+}
+```
+
+#### 定期訂閱排程
+
+`analytics_subscriptions` 資料表已完整實作，記錄每位使用者的訂閱狀態（`is_subscribed`）與頻率偏好（`frequency`：`daily` / `weekly` / `monthly`）。
+
+若需實現定期自動推送，可在 n8n 中新增 **Schedule Trigger** 節點，定時呼叫後端 `GET /api/analytics/subscription` 查詢已訂閱用戶，再批次觸發報告生成與發送，**無需修改後端任何程式碼**。
+
+---
 
 ## 安裝與開發環境
 
@@ -1207,7 +1360,8 @@ uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```bash
 cd order-management-frontend
 npm install
-node server.js          # Express 靜態服務，預設 port 3000
+API_BASE=http://localhost:8000/api node server.js
+# Windows：$env:API_BASE="http://localhost:8000/api"; node server.js
 ```
 
 **API 文件**（開發模式自動啟用）
@@ -1494,6 +1648,17 @@ pytest --cov=. --cov-report=term-missing
 - [x] **CORS 動態設定**（環境變數注入，禁止硬編碼）
 - [x] **環境感知例外處理**（生產環境不暴露堆疊追蹤）
 
+#### 部署與整合
+
+- [x] **Gmail API 發信**（HTTPS 443 埠，規避雲端 SMTP 封鎖）
+  - Google Gmail REST API + OAuth2，優先於 SMTP，自動 Fallback 補備走 SMTP 或 Mock 模式
+- [x] **n8n Webhook 接口實作**（Payload 組裝、httpx 發送，環境變數啟用）
+  - `ENABLE_N8N_WEBHOOK=True` + `N8N_WEBHOOK_URL` 即可啟用，無需修改後端程式碼
+- [x] **訂閱偏好資料庫儲存**（`analytics_subscriptions` 資料表 + 完整 CRUD）
+  - `is_subscribed`、`frequency` 欄位已備妥，支援 daily / weekly / monthly 訂閱週期
+- [x] **前後端部署於 Render**（前後端分離，環境變數動態注入）
+  - 後端 Python Web Service + 前端 Node.js Web Service，`API_BASE` 環境變數動態路由
+
 ---
 
 ### 架構演進規劃（Planned Roadmap）
@@ -1516,6 +1681,14 @@ pytest --cov=. --cov-report=term-missing
   - 現有 `logging.exception()` 替換為 JSON 格式，加入 `request_id` 追蹤鏈路
 
 #### Phase 2 — 功能擴展
+
+- [ ] **n8n Workflow 實際串接**
+  - 建立 n8n Webhook Node，設定 `N8N_WEBHOOK_URL` 環境變數，後端即將報告 Payload 推送至外部工作流（Slack、CRM、Email 等）
+  - 接口已備妥，無需修改後端程式碼
+
+- [ ] **定期訂閱排程觸發**
+  - 利用 n8n Schedule Trigger 定期呼叫後端 `GET /api/analytics/subscription`，查詢已訂閱用戶並批次觸發報告生成與發信
+  - `analytics_subscriptions` 資料表已備妥，無需修改後端任何程式碼
 
 - [ ] **定時排程分析報告（Scheduled Analytics）**
   - **業務價值**：每日 / 每週自動生成 AI 銷售分析並推送郵件，無需使用者手動觸發
@@ -1603,4 +1776,4 @@ order-management-vb/
 
 ---
 
-*此文件由專案維護者更新，最後修訂於 2026-05。*
+*此文件由專案維護者更新，最後修訂於 2026-05。前後端均已部署於 Render。*
